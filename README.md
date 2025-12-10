@@ -52,8 +52,8 @@ uv sync
 ### 3. 验证环境
 
 ```bash
-# 运行测试命令
-uv run python -c "import torch; print('环境配置成功！PyTorch版本:', torch.__version__)"
+# 运行测试命令 (运行最小化示例)
+uv run src/demo_fno_synth.py
 ```
 
 ---
