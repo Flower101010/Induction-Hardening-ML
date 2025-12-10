@@ -18,6 +18,11 @@
 2. 构建 [具体模型，如神经网络/SVM] 模型。
 3. 实现对 [应力/温度场/相变场] 的精确预测。
 
+## 📚 模型文档
+
+如果你想了解核心算法 FNO 的原理、数据维度定义以及常见问题，请阅读：
+👉 **[FNO 模型使用指南 & 原理说明](docs/model_guide.md)** <-- (点击这里)
+
 ## 🚀 环境配置 (极速版)
 
 本项目使用 **[uv](https://github.com/astral-sh/uv)** 进行依赖管理，确保所有成员环境完全一致。请务必按照以下步骤操作，**不要使用传统的 pip install**。
@@ -47,8 +52,8 @@ uv sync
 ### 3. 验证环境
 
 ```bash
-# 运行测试命令
-uv run python -c "import torch; print('环境配置成功！PyTorch版本:', torch.__version__)"
+# 运行测试命令 (运行最小化示例)
+uv run src/demo_fno_synth.py
 ```
 
 ---
