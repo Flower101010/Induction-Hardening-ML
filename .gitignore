@@ -222,6 +222,7 @@ datasets/
 *.xls
 *.json
 *.xml
+*.npy
 # If there are specific raw data formats, such as .dat or .mat, add them too
 *.mat 
 
@@ -232,9 +233,9 @@ datasets/
 *.h5
 *.pkl
 *.onnx
-models/
 checkpoints/
 weights/
+outputs/models_weights
 
 # 3. Training logs and outputs
 logs/

@@ -148,7 +148,7 @@ def generate_shaft_data_v2(
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--num_samples", type=int, default=10)
-    parser.add_argument("--out_dir", type=str, default="data")
+    parser.add_argument("--out_dir", type=str, default="data/processed")
     args = parser.parse_args()
 
     inputs, outputs = generate_shaft_data_v2(

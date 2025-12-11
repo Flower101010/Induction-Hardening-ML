@@ -136,7 +136,7 @@ def main():
     )
     parser.add_argument("--grid_size", type=int, default=64, help="Grid size (square)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
-    parser.add_argument("--out_dir", type=str, default="data", help="Output directory")
+    parser.add_argument("--out_dir", type=str, default="data/processed", help="Output directory")
 
     args = parser.parse_args()
 
