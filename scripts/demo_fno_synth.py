@@ -1,3 +1,13 @@
+"""
+FNO Demo Script (Synthetic Data)
+================================
+
+This script demonstrates a basic usage of the Fourier Neural Operator (FNO)
+on a synthetic diffusion dataset. It serves as a proof-of-concept or "smoke test"
+to ensure the FNO model and training pipeline are working correctly before
+applying them to the more complex induction hardening data.
+"""
+
 import torch
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
