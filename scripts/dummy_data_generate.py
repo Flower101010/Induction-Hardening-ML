@@ -1,9 +1,3 @@
-import numpy as np
-import matplotlib.pyplot as plt
-from tqdm import tqdm
-import argparse
-import os
-
 """
 物理情景说明：
 本脚本模拟了一个简化的 2D 轴类感应淬火过程 (Induction Hardening)。
@@ -16,6 +10,12 @@ import os
 - 热源 (集肤效应): 热源集中在右侧边缘 (表面)，随时间从上往下移动。
 - 淬火 (Quenching): 在热源经过后，紧接着施加一个强冷却区域。
 """
+
+import numpy as np
+import matplotlib.pyplot as plt
+from tqdm import tqdm
+import argparse
+import os
 
 
 def generate_shaft_data(
@@ -54,20 +54,13 @@ def generate_shaft_data(
         for t in range(time_steps):
             u_new = u.copy()
 
-            # --- 1. 计算热源 (Source) ---
-            # 模拟热源移动 (从上往下)
             source_pos_y = int((t / time_steps) * ny)
 
             Y, X = np.ogrid[:ny, :nx]
-            # 集肤效应：热源集中在右侧表面 (X = nx-1)
-            # 使用较小的方差使加热更集中于表面
+
             dist_sq = (X - (nx - 1)) ** 2 + (Y - source_pos_y) ** 2
             source = power * np.exp(-dist_sq / 10.0)
 
-            # --- 2. 计算扩散 (Diffusion) ---
-            # 使用 np.roll 计算拉普拉斯算子
-            # 注意：np.roll 是周期性的，会导致左边界和右边界互通。
-            # 我们需要在后续步骤中通过强制边界条件来修正这一点。
             laplacian = (
                 np.roll(u, 1, axis=0)
                 + np.roll(u, -1, axis=0)
@@ -79,8 +72,6 @@ def generate_shaft_data(
             # 更新温度场: dT/dt = alpha * laplacian + Source
             u_new += dt * (diffusivity * laplacian + source)
 
-            # --- 3. 模拟淬火 (Quenching) ---
-            # 喷淋头跟在感应圈后面 15 个网格的位置
             spray_pos_y = source_pos_y - 15
             if 0 <= spray_pos_y < ny:
                 # 喷水区域：表面附近
@@ -94,24 +85,13 @@ def generate_shaft_data(
             u_new[0, :] = 0
             u_new[-1, :] = 0
 
-            # 左侧边界 (轴心): 对称轴，绝热 (Neumann, dT/dx = 0)
-            # 强制左边界的值等于其右侧邻居的值，切断与右边界的周期性联系
             u_new[:, 0] = u_new[:, 1]
-
-            # 右侧边界 (表面):
-            # 之前代码强制为0是错误的，因为我们在加热表面。
-            # 这里不做强制赋值，允许温度自由演化 (自然边界)。
-            # 但为了切断 np.roll 带来的左侧周期性影响，我们需要修正拉普拉斯算子带来的误差
-            # 或者简单地，假设最外层与倒数第二层梯度较小（绝热），除非有热源/冷却。
-            # 鉴于我们已经加了 Source 和 Quench，这里不做额外操作即可，
-            # 只要左侧边界被修正了，右侧就不会收到左侧传来的错误热量。
 
             u = u_new
             sample_trajectory.append(u.copy())
 
         # 转换格式
-        # Input channel 0: Initial grid (zeros)
-        # Input channel 1: Power map
+
         input_tensor = np.zeros((nx, ny, 2))
         input_tensor[:, :, 1] = power
 
@@ -136,7 +116,9 @@ def main():
     )
     parser.add_argument("--grid_size", type=int, default=64, help="Grid size (square)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
-    parser.add_argument("--out_dir", type=str, default="data/processed", help="Output directory")
+    parser.add_argument(
+        "--out_dir", type=str, default="data/processed", help="Output directory"
+    )
 
     args = parser.parse_args()
 
@@ -165,20 +147,7 @@ def main():
     vmax = np.max(outputs[sample_idx])
 
     for t in range(args.time_steps):
-        # 注意：imshow 默认 origin='upper'，符合我们矩阵的定义 (0行在上面)
-        # 我们转置一下显示，让 X轴(径向)水平，Y轴(轴长)垂直 -> 看起来像横放的轴
-        # 或者保持原样：X轴垂直，Y轴水平？
-        # 原代码：axes[t].imshow(outputs[sample_idx, t]...)
-        # outputs shape: (time, nx, ny) -> (time, radius, length)
-        # 通常画图习惯：横轴是轴长(Length, Y)，纵轴是径向(Radius, X)
-        # 所以我们显示时转置一下，并且把径向翻转（让表面在上面或下面）
-
         img_data = outputs[sample_idx, t]  # (nx, ny) = (Radius, Length)
-
-        # 现在的显示：行是Radius，列是Length。
-        # 也就是 图像的高度是半径，宽度是轴长。
-        # 我们的热源在 X=nx-1 (图像底部)。
-        # 移动方向是 Y 增加 (图像从左到右)。
 
         axes[t].imshow(img_data, cmap="hot", vmin=0, vmax=vmax, aspect="auto")
         axes[t].set_title(f"T={t}")

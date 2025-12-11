@@ -11,17 +11,19 @@
 ## 📖 项目简介
 
 本项目为《机器学习基础理论及其在工程科学中的应用》课程大作业。
-**选题方向：** [材料本构建模 / 轴类结构感应淬火预测]
+
+**选题方向：** [轴类结构感应淬火预测]
+
 **主要目标：**
 
-1. 针对 [具体材料/场景] 进行数据分析与处理。
-2. 构建 [具体模型，如神经网络/SVM] 模型。
+1. 针对 轴类结构感应淬火 进行数据分析与处理。
+2. 构建 FNO 模型。
 3. 实现对 [应力/温度场/相变场] 的精确预测。
 
 ## 📚 模型文档
 
 如果你想了解核心算法 FNO 的原理、数据维度定义以及常见问题，请阅读：
-👉 **[FNO 模型使用指南 & 原理说明](docs/model_guide.md)** <-- (点击这里)
+👉 **[FNO 模型使用指南 & 原理说明](docs/model_guide.md)**
 
 ## 🚀 环境配置 (极速版)
 
@@ -35,7 +37,7 @@
   curl -lsSf https://astral.sh/uv/install.sh | sh
   ```
 
-其他安装方式请参考其[官方文档](https://docs.astral.sh/uv/getting-started/installation/)
+   其他安装方式请参考其[官方文档](https://docs.astral.sh/uv/getting-started/installation/)
 
 ### 2. 克隆项目 & 同步环境
 
@@ -53,10 +55,35 @@ uv sync
 
 ```bash
 # 运行测试命令 (运行最小化示例)
-uv run src/demo_fno_synth.py
+uv run scripts/demo_fno_synth.py
 ```
 
 ---
+
+## 📂 项目结构
+
+```text
+Induction-Hardening-ML/
+├── configs/                # 存放 yaml 配置文件 (模型参数、训练参数)
+├── data/
+│   ├── raw/                # 原始数据 (老师发的)
+│   └── processed/          # 预处理后的数据 (.npy)
+├── docs/                   # 文档 (模型说明、参考文献)
+├── notebooks/              # 实验用的 Jupyter Notebooks (草稿本)
+├── scripts/                # 可执行脚本
+│   ├── train.py            # 训练脚本
+│   ├── evaluate.py         # 评估脚本
+│   ├── visualize.py        # 可视化脚本
+│   ├── process_raw_data.py # 原始数据处理脚本
+│   └── dummy_data_*.py     # 虚拟数据生成器
+├── src/                    # 核心源代码
+│   ├── data/               # 数据加载 (Dataset) 与处理
+│   ├── engine/             # 训练循环逻辑 (Trainer)
+│   ├── models/             # 模型定义 (FNO)
+│   └── utils/              # 工具函数 (IO, Metrics, Plotting)
+├── main.py                 # 主入口
+└── README.md
+```
 
 ## 🤝 协作规范 (必读)
 
@@ -103,29 +130,6 @@ uv run src/demo_fno_synth.py
       %autoreload 2
       ```
 
-## 📂 项目结构说明
-
-```text
-├── config/              # 配置文件
-├── data/                # ⚠️ 数据文件 (已忽略，不要上传到 Git)
-│   ├── raw/             # 请将原始 csv/xlsx 文件放入此处
-│   └── processed/       # 代码生成的清洗后数据
-├── docs/                # 文档
-│   ├── references/      # 参考文献
-│   └── report_drafts/   # 报告草稿
-├── notebooks/           # 个人实验区 (命名格式：姓名_实验内容.ipynb)
-├── outputs/             # 结果输出 (模型权重、图片)
-│   ├── figures/         # 图片输出
-│   ├── logs/            # 日志文件
-│   └── models/          # 模型权重
-├── scripts/             # 辅助脚本
-├── src/                 # 核心代码库
-├── tests/               # 测试代码
-├── main.py              # 主程序入口
-├── pyproject.toml       # 依赖配置文件
-└── uv.lock              # 环境版本锁定文件
-```
-
 ## 💻 如何运行代码
 
 为了满足作业“代码可复现”的要求，请统一使用以下命令运行：
@@ -139,13 +143,13 @@ uv run src/demo_fno_synth.py
 ### 2. 训练模型
 
 ```bash
-uv run scripts/run_train.py
+uv run scripts/train.py --config configs/train_config.yaml
 ```
 
 ### 3. 预测与评估
 
 ```bash
-uv run scripts/run_evaluate.py
+uv run scripts/evaluate.py --config configs/model_config.yaml --checkpoint outputs/models_weights/best_model.pth
 ```
 
 ### 4. 启动 Jupyter Notebook (用于实验)
@@ -164,6 +168,6 @@ uv run jupyter lab
 | :--- | :--- | :--- | :--- |
 | **[Flos]** | 统筹、架构搭建、Pipeline整合 | 初始化项目、编写训练脚本 | TBD |
 | **[组员A]** | 数据工程 | 数据清洗、特征提取 | TBD |
-| **[组员B]** | 模型构建 | 搭建 Baseline 模型 | TBD |
-| **[组员C]** | 调参优化 | 尝试 Transformer/LSTM | TBD |
+| **[组员B]** | 模型构建 | 搭建  | TBD |
+| **[组员C]** | 调参优化 | 尝试  | TBD |
 | **[组员D]** | 可视化与报告 | TBD | TBD |

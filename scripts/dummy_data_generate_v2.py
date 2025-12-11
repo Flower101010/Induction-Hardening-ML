@@ -1,9 +1,3 @@
-import numpy as np
-import matplotlib.pyplot as plt
-from tqdm import tqdm
-import argparse
-import os
-
 """
 Improved Dummy Data Generator for Induction Hardening
 Improvements over v1:
@@ -13,6 +7,12 @@ Improvements over v1:
    - Logic: If T > Ac3 (threshold), transforms to Austenite.
    - If Austenite cools down, transforms to Martensite (simplified).
 """
+
+import numpy as np
+import matplotlib.pyplot as plt
+from tqdm import tqdm
+import argparse
+import os
 
 
 def generate_shaft_data_v2(
