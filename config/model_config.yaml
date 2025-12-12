@@ -1,0 +1,44 @@
+# Model Configuration for Induction Hardening FNO
+# 淬火傅里叶神经算子模型配置
+# =================================================
+
+model:
+  name: "InductionFNO"
+  
+  # Model Hyperparameters
+  n_modes: [16, 16] 
+  
+  # hidden_channels: Width of the network. 
+  hidden_channels: 32
+  
+  # n_layers: Number of Fourier Layers. 
+  n_layers: 4
+  
+  # Input/Output Dimensions
+  in_channels: 3
+  out_channels: 2
+
+training:
+  # Optimization
+  batch_size: 32
+  epochs: 100
+  learning_rate: 1.0e-3
+  weight_decay: 1.0e-4
+  
+  # Scheduler settings (StepLR)
+  scheduler:
+    step_size: 20
+    gamma: 0.5
+    
+  # Hardware
+  device: "cuda"  # Use "cpu" if no GPU is available
+
+data:
+  # Data paths (relative to project root)
+  train_path: "data/processed/train_data.pt"
+  val_path: "data/processed/val_data.pt"
+  test_path: "data/processed/test_data.pt"
+  
+  # Resolution
+  image_height: 64
+  image_width: 64
