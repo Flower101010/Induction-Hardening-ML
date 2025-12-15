@@ -7,8 +7,9 @@ import os
 class InductionHardeningDataset(Dataset):
     """
     Dataset for Induction Hardening.
-    感应淬火数据集。
     Loads .npy files from the processed data directory.
+
+    感应淬火数据集。
     从处理后的数据目录加载 .npy 文件。
     """
 
@@ -16,11 +17,8 @@ class InductionHardeningDataset(Dataset):
         """
         Args:
             data_dir (str): Path to the processed data directory.
-            data_dir (str): 处理后数据目录的路径。
             split (str): "train", "val", or "test".
-            split (str): "train"（训练）, "val"（验证）, 或 "test"（测试）。
             transform (callable, optional): Optional transform to be applied on a sample.
-            transform (callable, optional): 可选的应用于样本的变换。
         """
         self.data_dir = data_dir
         self.split = split

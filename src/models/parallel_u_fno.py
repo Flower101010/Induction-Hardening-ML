@@ -102,7 +102,6 @@ class ParallelUFNO(nn.Module):
     """
     并行 U-FNO 架构。
     Combines FNO (Global) and U-Net (Local) in parallel.
-    并行结合 FNO（全局）和 U-Net（局部）。
     """
 
     def __init__(
