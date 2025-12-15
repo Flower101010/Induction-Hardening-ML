@@ -1,11 +1,17 @@
 """
 FNO Demo Script (Synthetic Data)
 ================================
+FNO 演示脚本（合成数据）
+================================
 
 This script demonstrates a basic usage of the Fourier Neural Operator (FNO)
+此脚本演示了傅里叶神经算子 (FNO) 的基本用法
 on a synthetic diffusion dataset. It serves as a proof-of-concept or "smoke test"
+在合成扩散数据集上。它作为一个概念验证或“冒烟测试”
 to ensure the FNO model and training pipeline are working correctly before
+以确保 FNO 模型和训练流程在应用之前正常工作
 applying them to the more complex induction hardening data.
+应用到更复杂的感应淬火数据之前。
 """
 
 import torch
@@ -16,6 +22,8 @@ from neuralop.models import FNO
 
 class DiffusionToy(Dataset):
     """Synthetic 2D diffusion dataset with smooth fields for FNO smoke tests."""
+
+    """用于 FNO 冒烟测试的具有平滑场的合成 2D 扩散数据集。"""
 
     def __init__(self, n: int = 200, size: int = 64) -> None:
         self.n = n
@@ -35,7 +43,9 @@ class DiffusionToy(Dataset):
             freq * torch.pi * self.coord[..., 1] + phase
         )
         T0 = base + 0.05 * torch.randn_like(base)  # noisy initial temperature
+        # 噪声初始温度
         T = torch.exp(-0.5 * freq) * base  # simple decay target
+        # 简单衰减目标
         x = torch.cat([self.coord, T0.unsqueeze(-1)], dim=-1)  # [H, W, 3]
         y = torch.stack([T, torch.zeros_like(T)], dim=-1)  # [H, W, 2]
         return x.float(), y.float()
@@ -67,6 +77,7 @@ def train_step(
     y = y.to(device)  # [B, H, W, 2]
     x = x.permute(0, 3, 1, 2)  # [B, C, H, W]
     y = y.permute(0, 3, 1, 2)
+    # 强制物理范围
     pred = model(x)
     pred_phase = torch.clamp(pred[:, 1:2], 0.0, 1.0)  # enforce physical range
     pred = torch.cat([pred[:, 0:1], pred_phase], dim=1)

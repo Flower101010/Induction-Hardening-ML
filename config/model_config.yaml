@@ -3,7 +3,7 @@
 # =================================================
 
 model:
-  name: "InductionFNO"
+  name: "ParallelUFNO"
   
   # Model Hyperparameters
   n_modes: [16, 16] 
@@ -14,9 +14,17 @@ model:
   # n_layers: Number of Fourier Layers. 
   n_layers: 4
   
+  # U-Net Hyperparameters
+  unet_hidden_channels: 32
+  
   # Input/Output Dimensions
   in_channels: 3
-  out_channels: 2
+  out_channels: 4 # Temp + 3 Phases
+
+loss:
+  alpha: 1.0 # MSE/CE Weight
+  beta: 0.1  # Sobel Weight
+  gamma: 0.1 # Physics Weight
 
 training:
   # Optimization
@@ -30,6 +38,11 @@ training:
     step_size: 20
     gamma: 0.5
     
+  # Early Stopping
+  early_stopping:
+    patience: 10
+    min_delta: 1.0e-5
+
   # Hardware
   device: "cuda"  # Use "cpu" if no GPU is available
 
