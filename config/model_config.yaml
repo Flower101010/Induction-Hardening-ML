@@ -15,7 +15,9 @@ model:
   n_layers: 4
   
   # U-Net Hyperparameters
-  unet_hidden_channels: 32
+  # unet_hidden_channels: 32 (Deprecated, using encoder_name instead)
+  encoder_name: "resnet18"
+  encoder_weights: null
   
   # Input/Output Dimensions
   in_channels: 3

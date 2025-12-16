@@ -65,7 +65,8 @@ def main():
         in_channels=config["model"]["in_channels"],
         out_channels=config["model"]["out_channels"],
         n_layers=config["model"]["n_layers"],
-        unet_hidden_channels=config["model"]["unet_hidden_channels"],
+        encoder_name=config["model"]["encoder_name"],
+        encoder_weights=config["model"]["encoder_weights"],
     )
 
     # Loss
