@@ -210,7 +210,6 @@ def main():
         # 修正 2: Power 归一化！！！(非常重要)
         # 将 50~80 的值除以 100，使其变为 0.5~0.8，与温度场(0~1)量级匹配
         p_norm = p_val / 100.0
-        power_channel = np.full((grid_size, grid_size, 1), p_norm)
 
         # 序列切片
         series = all_series[i]  # (50, 64, 64, 2)
@@ -219,12 +218,28 @@ def main():
         x_frames = series[:-1]  # t=0 to 48
         y_frames = series[1:]  # t=1 to 49
 
-        # 把 Power 拼到 X 里
-        # X shape: (49, 64, 64, 3) -> Channels: Temp, Phase, Power
-        power_stack = np.repeat(
-            power_channel[np.newaxis, ...], x_frames.shape[0], axis=0
-        )
-        x_combined = np.concatenate([x_frames, power_stack], axis=-1)
+        # --- 修改开始: 生成移动的热源场 ---
+        source_maps = []
+        nx, ny = grid_size, grid_size
+        X_grid, Y_grid = np.ogrid[:nx, :ny]
+
+        # 重新计算每一帧的热源分布
+        # 注意：这里的时间步数必须与 x_frames 对应 (0 到 48)
+        # 原始生成逻辑中 time_steps=50
+        time_steps = 50
+
+        for t in range(x_frames.shape[0]):
+            source_pos_y = int((t / time_steps) * ny)
+            dist_sq = (X_grid - (nx - 1)) ** 2 + (Y_grid - source_pos_y) ** 2
+            # 生成热源场 (使用 p_norm 缩放)
+            source_frame = p_norm * np.exp(-dist_sq / 10.0)
+            source_maps.append(source_frame)
+
+        source_stack = np.array(source_maps)[..., np.newaxis]  # (49, 64, 64, 1)
+
+        # 拼接：[Temp, Phase, Source_Map]
+        x_combined = np.concatenate([x_frames, source_stack], axis=-1)
+        # --- 修改结束 ---
 
         X_list.append(x_combined)
         Y_list.append(y_frames)

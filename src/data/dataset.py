@@ -48,6 +48,10 @@ class InductionHardeningDataset(Dataset):
         # x: [3, 64, 64]
         # y: [2, 64, 64]
 
+        # Fix Phase Channel for Classification (0, 0.5, 1.0 -> 0, 1, 2)
+        # 修正分类的相通道 (0, 0.5, 1.0 -> 0, 1, 2)
+        y[1] = y[1] * 2
+
         if self.transform:
             pass
 
