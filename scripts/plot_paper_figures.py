@@ -1,10 +1,9 @@
-#!/usr/bin/env python
 """
 Script to generate publication-quality figures for Induction Hardening ML model.
-Generates:
-1. Parity Plot (Ground Truth vs Prediction)
-2. Profile Plot (Physical field distribution along radius)
-3. Error Histogram (Error distribution)
+UPDATED VERSION:
+1. Auto-detects the 'hottest' sample for Profile Plot (avoids boring room-temp plots).
+2. Separates Temperature and Phase for Parity/Error plots (avoids statistical mixing).
+3. Corrects unit labels.
 """
 
 import argparse
@@ -25,9 +24,7 @@ from src.models import ParallelUFNO
 from src.data.dataset import InductionHardeningDataset
 
 # Constants
-# Estimated max radius in mm based on data analysis (approx 5mm)
 MAX_RADIUS_MM = 5.0
-GRID_WIDTH = 64  # r dimension
 
 
 def load_model(checkpoint_path, config_path, device="cuda"):
@@ -88,21 +85,15 @@ def get_test_predictions(
 
             out = model(x)
 
-            # Post-process: temp unchanged, phase -> softmax then clamp to [0,1]
+            # Post-process
             temp_pred = out[:, 0:1]
             phase_logits = out[:, 1:]
-            # Check if model output is already probabilities or logits
-            # Usually FNO outputs logits for classification/segmentation tasks
-            # But here it's regression/multi-task.
-            # Evaluate.py uses softmax, so we should too.
             phase_prob = torch.softmax(phase_logits, dim=1)
             phase_prob = torch.clamp(phase_prob, 0.0, 1.0)
             pred = torch.cat([temp_pred, phase_prob], dim=1)
 
-            # Apply mask if available to ignore background
+            # Apply mask
             if mask_tensor is not None:
-                # Expand mask for channels and batch
-                # Mask shape: (H, W) -> (1, 1, H, W)
                 mask_expanded = mask_tensor.unsqueeze(0).unsqueeze(0).expand_as(pred)
                 pred = pred * mask_expanded
                 y = y * mask_expanded
@@ -113,228 +104,255 @@ def get_test_predictions(
     return np.concatenate(all_preds), np.concatenate(all_targets)
 
 
-def plot_parity(preds, targets, output_dir):
-    """
-    Generate Parity Plot (Ground Truth vs Prediction).
-    """
-    print("Generating Parity Plot...")
+def plot_parity_single(y_true, y_pred, title, filename, color, output_dir):
+    """Helper function to plot parity for a single physical quantity."""
+    mask = y_true != 0  # Simple masking
+    y_true_masked = y_true[mask]
+    y_pred_masked = y_pred[mask]
 
-    # Flatten arrays
-    # Select only non-zero values (assuming 0 is background/masked)
-    # Or better, use the mask if we had it. Here we assume exact 0 is masked.
-    mask = targets != 0
-    y_true = targets[mask]
-    y_pred = preds[mask]
+    # Downsample
+    if len(y_true_masked) > 50000:
+        indices = np.random.choice(len(y_true_masked), 50000, replace=False)
+        y_true_masked = y_true_masked[indices]
+        y_pred_masked = y_pred_masked[indices]
 
-    # Downsample for plotting if too many points
-    if len(y_true) > 50000:
-        indices = np.random.choice(len(y_true), 50000, replace=False)
-        y_true = y_true[indices]
-        y_pred = y_pred[indices]
+    plt.figure(figsize=(6, 6))
+    plt.scatter(y_true_masked, y_pred_masked, alpha=0.1, s=1, c=color)
 
-    plt.figure(figsize=(8, 8))
-    plt.scatter(y_true, y_pred, alpha=0.1, s=1, c="blue")
-
-    # Plot diagonal
-    min_val = min(y_true.min(), y_pred.min())
-    max_val = max(y_true.max(), y_pred.max())
-    plt.plot([min_val, max_val], [min_val, max_val], "r--", lw=2, label="Ideal (y=x)")
-
-    plt.xlabel("COMSOL Ground Truth")
-    plt.ylabel("ML Prediction")
-    plt.title("Parity Plot: Ground Truth vs Prediction")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
+    min_val = min(y_true_masked.min(), y_pred_masked.min())
+    max_val = max(y_true_masked.max(), y_pred_masked.max())
+    plt.plot([min_val, max_val], [min_val, max_val], "k--", lw=1.5, label="Ideal")
 
     # Calculate R2
-    # r2 = 1 - np.sum((y_true - y_pred)**2) / np.sum((y_true - np.mean(y_true))**2)
-    # plt.text(min_val, max_val, f'$R^2 = {r2:.4f}$', fontsize=12, verticalalignment='top')
+    # Simple R2 implementation
+    ss_res = np.sum((y_true_masked - y_pred_masked) ** 2)
+    ss_tot = np.sum((y_true_masked - np.mean(y_true_masked)) ** 2)
+    r2 = 1 - (ss_res / ss_tot)
 
+    plt.xlabel("Ground Truth (COMSOL)")
+    plt.ylabel("ML Prediction")
+    plt.title(f"{title}\n$R^2 = {r2:.4f}$")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, "parity_plot.png"), dpi=300)
+    plt.savefig(os.path.join(output_dir, filename), dpi=300)
     plt.close()
 
 
+def plot_parity(preds, targets, output_dir):
+    """Generate Separate Parity Plots for Temp and Phase."""
+    print("Generating Parity Plots...")
+
+    # 假设 Channel 0 是温度
+    temp_preds = preds[:, 0, :, :].flatten()
+    temp_targets = targets[:, 0, :, :].flatten()
+    plot_parity_single(
+        temp_targets,
+        temp_preds,
+        "Temperature Parity",
+        "parity_temp.png",
+        "red",
+        output_dir,
+    )
+
+    # 假设 Channel 2 是马氏体 (根据之前的 Profile 代码逻辑)
+    # 注意：如果你的模型输出通道不同，请在这里修改索引
+    if preds.shape[1] > 2:
+        mart_preds = preds[:, 2, :, :].flatten()
+        mart_targets = targets[:, 2, :, :].flatten()
+        plot_parity_single(
+            mart_targets,
+            mart_preds,
+            "Martensite Parity",
+            "parity_martensite.png",
+            "blue",
+            output_dir,
+        )
+
+
+def find_hottest_sample(dataset):
+    """Loop through dataset to find the sample with maximum temperature."""
+    print("Searching for the hottest sample (highest max temp)...")
+    max_temp = -float("inf")
+    best_idx = 0
+
+    # Check every 10th sample to speed up (or every 1 if dataset is small)
+    stride = 10 if len(dataset) > 1000 else 1
+
+    for i in range(0, len(dataset), stride):
+        _, y = dataset[i]
+        # Assuming channel 0 is temperature
+        curr_max = y[0].max().item()
+        if curr_max > max_temp:
+            max_temp = curr_max
+            best_idx = i
+
+    print(f"Found max temp {max_temp:.2f} at index {best_idx}")
+    return best_idx
+
+
 def plot_profile(model, dataset, output_dir, device="cuda"):
-    """
-    Generate Profile Plot (Physical field distribution along radius).
-    """
+    """Generate Profile Plot for the HOTTEST sample."""
     print("Generating Profile Plot...")
 
-    # Select a sample (e.g., middle of the dataset)
-    idx = len(dataset) // 2
+    # [CHANGE] Use the hottest sample instead of a random one
+    idx = find_hottest_sample(dataset)
     x, y = dataset[idx]
 
-    # Add batch dimension
     x = x.unsqueeze(0).to(device)
     y = y.unsqueeze(0).to(device)
 
     with torch.no_grad():
         out = model(x)
-        # Post-process
         temp_pred = out[:, 0:1]
         phase_logits = out[:, 1:]
         phase_prob = torch.softmax(phase_logits, dim=1)
         phase_prob = torch.clamp(phase_prob, 0.0, 1.0)
         pred = torch.cat([temp_pred, phase_prob], dim=1)
 
-    # Convert to numpy
     pred = pred.squeeze(0).cpu().numpy()
     target = y.squeeze(0).cpu().numpy()
 
-    # Dimensions: (C, H, W) -> (C, z, r)
-    # We want to plot along r (radius) at a specific z (height)
-    # Let's pick the middle z
+    # Pick middle Z
     z_idx = pred.shape[1] // 2
-
-    # Extract profiles
-    # Channel 0: Temperature
-    # Channel 2: Martensite (usually) - Check dataset/model config
-    # Based on visualize.py: 0: Temp, 1: Austenite, 2: Martensite
-
     r_axis = np.linspace(0, MAX_RADIUS_MM, pred.shape[2])
 
-    temp_pred = pred[0, z_idx, :]
-    temp_true = target[0, z_idx, :]
+    temp_pred_profile = pred[0, z_idx, :]
+    temp_true_profile = target[0, z_idx, :]
+    mart_pred_profile = pred[2, z_idx, :]
+    mart_true_profile = target[2, z_idx, :]
 
-    mart_pred = pred[2, z_idx, :]
-    mart_true = target[2, z_idx, :]
-
-    # Denormalize Temperature if stats available
+    # Denormalize logic (if applicable)
     if dataset.stats:
         t_min = dataset.stats["temp_min"]
         t_max = dataset.stats["temp_max"]
-        temp_pred = temp_pred * (t_max - t_min) + t_min
-        temp_true = temp_true * (t_max - t_min) + t_min
+        temp_pred_profile = temp_pred_profile * (t_max - t_min) + t_min
+        temp_true_profile = temp_true_profile * (t_max - t_min) + t_min
 
     fig, ax1 = plt.subplots(figsize=(10, 6))
 
-    # Plot Temperature (Left Axis)
     color = "tab:red"
     ax1.set_xlabel("Radius (mm)")
-    ax1.set_ylabel("Temperature (K)", color=color)
-    (l1,) = ax1.plot(
-        r_axis, temp_true, color=color, linestyle="-", label="Temp (COMSOL)"
+    # [CHANGE] Unit corrected to C
+    ax1.set_ylabel("Temperature (°C)", color=color)
+    ax1.plot(
+        r_axis, temp_true_profile, color=color, ls="-", lw=2, label="Temp (COMSOL)"
     )
-    (l2,) = ax1.plot(r_axis, temp_pred, color=color, linestyle="--", label="Temp (ML)")
+    ax1.plot(r_axis, temp_pred_profile, color=color, ls="--", lw=2, label="Temp (ML)")
     ax1.tick_params(axis="y", labelcolor=color)
 
-    # Plot Martensite (Right Axis)
     ax2 = ax1.twinx()
     color = "tab:blue"
     ax2.set_ylabel("Martensite Fraction", color=color)
-    (l3,) = ax2.plot(
-        r_axis, mart_true, color=color, linestyle="-", label="Martensite (COMSOL)"
+    ax2.plot(
+        r_axis,
+        mart_true_profile,
+        color=color,
+        ls="-",
+        lw=2,
+        label="Martensite (COMSOL)",
     )
-    (l4,) = ax2.plot(
-        r_axis, mart_pred, color=color, linestyle="--", label="Martensite (ML)"
+    ax2.plot(
+        r_axis, mart_pred_profile, color=color, ls="--", lw=2, label="Martensite (ML)"
     )
     ax2.tick_params(axis="y", labelcolor=color)
-    ax2.set_ylim(-0.1, 1.1)
+    ax2.set_ylim(-0.05, 1.05)
 
-    # Add legend
-    lines = [l1, l2, l3, l4]
-    labels = [l.get_label() for l in lines]  # noqa: E741
-    ax1.legend(lines, labels, loc="center right")  # type: ignore
+    # Combine legends
+    lines_1, labels_1 = ax1.get_legend_handles_labels()
+    lines_2, labels_2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines_1 + lines_2, labels_1 + labels_2, loc="center left")
 
-    plt.title(f"Profile Plot at z={z_idx} (Sample {idx})")
+    plt.title(f"Profile Plot at z={z_idx} (Sample {idx} - Peak Heating)")
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, "profile_plot.png"), dpi=300)
+    plt.savefig(os.path.join(output_dir, "profile_plot_hottest.png"), dpi=300)
     plt.close()
 
 
-def plot_error_histogram(preds, targets, output_dir):
-    """
-    Generate Error Histogram.
-    """
-    print("Generating Error Histogram...")
-
-    mask = targets != 0
-    diff = preds[mask] - targets[mask]
-
-    # Downsample if needed
+def plot_error_histogram_single(diff, title, filename, color, output_dir):
+    """Helper for error histogram."""
+    # Downsample
     if len(diff) > 100000:
         diff = np.random.choice(diff, 100000, replace=False)
 
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(8, 6))
+    plt.hist(diff, bins=100, density=True, alpha=0.6, color=color, label="Error Dist")
 
-    # Histogram
-    n, bins, patches = plt.hist(
-        diff, bins=100, density=True, alpha=0.6, color="g", label="Error Dist"
-    )
-
-    # Fit Gaussian
+    # Fit
     mu, std = stats.norm.fit(diff)
     xmin, xmax = plt.xlim()
     x = np.linspace(xmin, xmax, 100)
     p = stats.norm.pdf(x, mu, std)
-    plt.plot(
-        x,
-        p,
-        "k",
-        linewidth=2,
-        label=f"Normal Fit ($\mu={mu:.2e}, \sigma={std:.2e}$)",  # type: ignore
-    )
+    plt.plot(x, p, "k", lw=2, label=f"Fit ($\mu={mu:.2e}, \sigma={std:.2e}$)")  # type: ignore
 
     plt.xlabel("Prediction Error")
     plt.ylabel("Density")
-    plt.title("Error Distribution Histogram")
+    plt.title(title)
     plt.legend()
     plt.grid(True, alpha=0.3)
-
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, "error_histogram.png"), dpi=300)
+    plt.savefig(os.path.join(output_dir, filename), dpi=300)
     plt.close()
+
+
+def plot_error_histogram(preds, targets, output_dir):
+    """Generate Separate Error Histograms."""
+    print("Generating Error Histograms...")
+
+    # Temp Error
+    temp_diff = (preds[:, 0, :, :] - targets[:, 0, :, :]).flatten()
+    # Remove background zeros from stats if needed
+    mask = targets[:, 0, :, :] != 0
+    temp_diff = temp_diff[mask.flatten()]
+    plot_error_histogram_single(
+        temp_diff,
+        "Temperature Error Distribution",
+        "error_hist_temp.png",
+        "green",
+        output_dir,
+    )
+
+    # Martensite Error
+    if preds.shape[1] > 2:
+        mart_diff = (preds[:, 2, :, :] - targets[:, 2, :, :]).flatten()
+        plot_error_histogram_single(
+            mart_diff,
+            "Martensite Error Distribution",
+            "error_hist_martensite.png",
+            "orange",
+            output_dir,
+        )
 
 
 def main():
     parser = argparse.ArgumentParser(description="Generate paper figures")
+    parser.add_argument("--data_dir", type=str, default="data/processed")
     parser.add_argument(
-        "--data_dir", type=str, default="data/processed", help="Path to processed data"
+        "--checkpoint", type=str, default="outputs/models_weights/best_model.pth"
     )
+    parser.add_argument("--config", type=str, default="config/model_config.yaml")
     parser.add_argument(
-        "--checkpoint",
-        type=str,
-        default="outputs/models_weights/best_model.pth",
-        help="Path to model checkpoint",
-    )
-    parser.add_argument(
-        "--config",
-        type=str,
-        default="config/model_config.yaml",
-        help="Path to model config",
-    )
-    parser.add_argument(
-        "--output_dir",
-        type=str,
-        default="outputs/figures/paper",
-        help="Output directory for figures",
-    )
-    parser.add_argument(
-        "--split_file",
-        type=str,
-        default="config/data_split.json",
-        help="Path to split file",
-    )
+        "--output_dir", type=str, default="outputs/figures/paper_v2"
+    )  # Changed folder name
+    parser.add_argument("--split_file", type=str, default="config/data_split.json")
     parser.add_argument(
         "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu"
     )
 
     args = parser.parse_args()
-
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # Load Dataset
+    # 1. Load Dataset
     print("Loading test dataset...")
     dataset = InductionHardeningDataset(
         data_dir=args.data_dir, split="test", split_file=args.split_file
     )
 
-    # Load Model
+    # 2. Load Model
     model, cfg = load_model(args.checkpoint, args.config, args.device)
 
-    # Run Inference
+    # 3. Inference
     mask_path = os.path.join(args.data_dir, "npy_data", "geometry_mask.npy")
     if not os.path.exists(mask_path):
         mask_path = os.path.join(args.data_dir, "geometry_mask.npy")
@@ -343,7 +361,7 @@ def main():
         model, dataset, args.device, limit_batches=50, mask_path=mask_path
     )
 
-    # Generate Plots
+    # 4. Plots (Updated)
     plot_parity(preds, targets, args.output_dir)
     plot_profile(model, dataset, args.output_dir, args.device)
     plot_error_histogram(preds, targets, args.output_dir)

@@ -187,6 +187,12 @@ uv run scripts/evaluate.py --config config/model_config.yaml --checkpoint output
 uv run scripts/plot_loss.py --log outputs/logs/loss_history.json
 ```
 
+**绘制论文用图**:
+
+```bash
+uv run scripts/plot_paper_figures.py
+```
+
 **生成预测对比图 (静态)**:
 
 ```bash
