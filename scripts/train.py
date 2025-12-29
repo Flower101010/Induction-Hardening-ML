@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 import torch.optim as optim
 import sys
 import os
+import numpy as np
 
 # Add project root to path
 # 添加项目根目录到路径
@@ -45,17 +46,37 @@ def main():
 
     # Datasets
     # 数据集
-    train_dataset = InductionHardeningDataset(data_dir="data/processed", split="train")
-    # Assuming we use train data for validation for now as dummy data generator only made train data
-    # 假设我们暂时使用训练数据进行验证，因为虚拟数据生成器只生成了训练数据
-    val_dataset = InductionHardeningDataset(data_dir="data/processed", split="train")
+    # Use "npy_data" subdirectory if that's where data is
+    data_dir = "data/processed/npy_data"
+    train_dataset = InductionHardeningDataset(data_dir=data_dir, split="train")
+    val_dataset = InductionHardeningDataset(data_dir=data_dir, split="val")
 
     train_loader = DataLoader(
-        train_dataset, batch_size=config["training"]["batch_size"], shuffle=True
+        train_dataset,
+        batch_size=config["training"]["batch_size"],
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True,
     )
     val_loader = DataLoader(
-        val_dataset, batch_size=config["training"]["batch_size"], shuffle=False
+        val_dataset,
+        batch_size=config["training"]["batch_size"],
+        shuffle=False,
+        num_workers=4,
+        pin_memory=True,
     )
+
+    # Load Geometry Mask
+    # 加载几何掩码
+    mask_path = os.path.join(data_dir, "geometry_mask.npy")
+    if os.path.exists(mask_path):
+        mask = torch.from_numpy(np.load(mask_path)).float()
+        print(f"Loaded geometry mask from {mask_path}")
+    else:
+        print(
+            f"Warning: Geometry mask not found at {mask_path}. Training without mask."
+        )
+        mask = None
 
     # Model
     # 模型
@@ -103,6 +124,7 @@ def main():
         optimizer=optimizer,
         scheduler=scheduler,
         config=config,
+        mask=mask,
     )
 
     # Run
