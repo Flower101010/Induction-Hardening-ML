@@ -40,7 +40,7 @@ def plot_loss(log_file, output_dir):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--log", type=str, default="outputs/logs/loss_history.json")
-    parser.add_argument("--out", type=str, default="outputs/figures")
+    parser.add_argument("--out", type=str, default="outputs/figures/paper_v2")
     args = parser.parse_args()
 
     plot_loss(args.log, args.out)

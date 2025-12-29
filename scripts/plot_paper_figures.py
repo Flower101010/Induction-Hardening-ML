@@ -284,7 +284,7 @@ def plot_error_histogram_single(diff, title, filename, color, output_dir):
     xmin, xmax = plt.xlim()
     x = np.linspace(xmin, xmax, 100)
     p = stats.norm.pdf(x, mu, std)
-    plt.plot(x, p, "k", lw=2, label=f"Fit ($\mu={mu:.2e}, \sigma={std:.2e}$)")  # type: ignore
+    plt.plot(x, p, "k", lw=2, label=f"Fit ($\\mu={mu:.2e}, \\sigma={std:.2e}$)")  # type: ignore
 
     plt.xlabel("Prediction Error")
     plt.ylabel("Density")

@@ -130,6 +130,14 @@ def run_inference(checkpoint_path, config_path, data_path, stats_path):
                 x = x.unsqueeze(0)  # Add batch dim
 
                 pred = model(x)
+
+                # Apply Softmax to phase channels (channels 1, 2, 3) to convert logits to probabilities
+                # Channel 0 is Temperature (Regression), so we leave it as is.
+                pred_temp = pred[:, 0:1, :, :]
+                pred_phases_logits = pred[:, 1:, :, :]
+                pred_phases_probs = torch.softmax(pred_phases_logits, dim=1)
+                pred = torch.cat([pred_temp, pred_phases_probs], dim=1)
+
                 preds.append(pred)
                 gts.append(y.unsqueeze(0))
 

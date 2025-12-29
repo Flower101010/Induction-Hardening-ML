@@ -90,6 +90,20 @@ def main():
         encoder_weights=config["model"]["encoder_weights"],
     )
 
+    # Load Checkpoint if specified
+    # 如果指定了检查点，则加载
+    checkpoint_path = config["training"].get("load_from_checkpoint")
+    if checkpoint_path:
+        if os.path.exists(checkpoint_path):
+            print(f"Loading checkpoint from {checkpoint_path}...")
+            state_dict = torch.load(checkpoint_path, map_location=device)
+            model.load_state_dict(state_dict)
+            print("Checkpoint loaded successfully.")
+        else:
+            print(
+                f"Warning: Checkpoint file not found at {checkpoint_path}. Starting from scratch."
+            )
+
     # Loss
     # 损失函数
     criterion = CombinedLoss(

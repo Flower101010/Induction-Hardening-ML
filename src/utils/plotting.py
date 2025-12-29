@@ -300,7 +300,15 @@ class Visualizer:
             axes[2].set_title(f"Absolute Error - {name}")
             plt.colorbar(ims[2], ax=axes[2])
 
-            time_text = fig.suptitle(f"{name} Comparison - t = 0.00 s", fontsize=14)
+            fig.suptitle(f"{name} Comparison", fontsize=16)
+            time_text = axes[1].text(
+                0.5,
+                1.15,
+                "t = 0.00 s",
+                transform=axes[1].transAxes,
+                ha="center",
+                fontsize=14,
+            )
 
             def update(frame_idx):
                 gt = gt_data[frame_idx, ch_idx]
@@ -319,12 +327,12 @@ class Visualizer:
                 ims[2].set_array(diff_full)
 
                 time = frame_idx * 10.0 / (T - 1)
-                time_text.set_text(f"{name} Comparison - t = {time:.2f} s")
+                time_text.set_text(f"t = {time:.2f} s")
 
                 return ims + [time_text]
 
             anim = animation.FuncAnimation(
-                fig, update, frames=T, interval=1000 / fps, blit=True
+                fig, update, frames=T, interval=1000 / fps, blit=False
             )
 
             output_path = os.path.join(
