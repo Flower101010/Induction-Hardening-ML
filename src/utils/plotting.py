@@ -300,12 +300,14 @@ class Visualizer:
             axes[2].set_title(f"Absolute Error - {name}")
             plt.colorbar(ims[2], ax=axes[2])
 
-            fig.suptitle(f"{name} Comparison", fontsize=16)
-            time_text = axes[1].text(
+            # Adjust layout to prevent truncation
+            plt.subplots_adjust(top=0.80)
+
+            fig.suptitle(f"{name} Comparison", fontsize=16, y=0.95)
+            time_text = fig.text(
                 0.5,
-                1.15,
+                0.88,
                 "t = 0.00 s",
-                transform=axes[1].transAxes,
                 ha="center",
                 fontsize=14,
             )
