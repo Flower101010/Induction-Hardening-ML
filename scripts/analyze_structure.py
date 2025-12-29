@@ -88,11 +88,13 @@ def parse_specific_comsol_header(file_path):
         print(f"电流组 (I_factor): {df_map['I_factor'].nunique()}")
 
         # 保存映射表
-        df_map.to_csv("data/comsol_column_map.csv", index=False)
-        print("\n✅ 映射表已保存为 'data/comsol_column_map.csv'")
+        df_map.to_csv("data/analyze/comsol_column_map.csv", index=False)
+        print("\n✅ 映射表已保存为 'data/analyze/comsol_column_map.csv'")
 
         # 保存坐标列索引
-        pd.DataFrame(coord_cols).to_csv("data/comsol_coord_map.csv", index=False)
+        pd.DataFrame(coord_cols).to_csv(
+            "data/analyze/comsol_coord_map.csv", index=False
+        )
     else:
         print("❌ 解析失败，正则未匹配到任何列。")
 

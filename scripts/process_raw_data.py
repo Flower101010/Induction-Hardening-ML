@@ -140,7 +140,7 @@ def generate_ml_dataset(
 # 配置路径
 # ==========================================
 raw_csv = "data/raw/training_data.csv"  # COMSOL 原始大文件
-map_csv = "data/comsol_column_map.csv"  # 刚才生成的映射表
+map_csv = "data/analyze/comsol_column_map.csv"  # 刚才生成的映射表
 output_name = "data/processed/processed_dataset.csv"  # 输出文件名 (建议用 .csv 方便查看，大数据建议 .parquet)
 
 if __name__ == "__main__":
