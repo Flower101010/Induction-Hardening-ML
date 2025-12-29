@@ -45,12 +45,12 @@ class InductionHardeningDataset(Dataset):
         x = torch.from_numpy(self.X[idx]).float()
         y = torch.from_numpy(self.Y[idx]).float()
 
-        # x: [3, 64, 64]
-        # y: [2, 64, 64]
+        # x: [3, 128, 64]
+        # y: [3, 128, 64]
 
         # Fix Phase Channel for Classification (0, 0.5, 1.0 -> 0, 1, 2)
         # 修正分类的相通道 (0, 0.5, 1.0 -> 0, 1, 2)
-        y[1] = y[1] * 2
+        # y[1] = y[1] * 2
 
         if self.transform:
             pass

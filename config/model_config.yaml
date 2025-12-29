@@ -49,7 +49,7 @@ training:
   device: "cuda"  # Use "cpu" if no GPU is available
 
 data:
-  # Data paths (relative to project root)
+  # Data paths (relative to project root) 待定
   train_path: "data/processed/train_data.pt"
   val_path: "data/processed/val_data.pt"
   test_path: "data/processed/test_data.pt"
