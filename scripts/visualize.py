@@ -1,31 +1,76 @@
+#!/usr/bin/env python
 """
-Visualization Script
-====================
-Generates plots and animations for model predictions.
+Visualization script for Induction Hardening simulation results.
+Refactored to use src.utils.plotting.Visualizer.
 """
 
 import argparse
+import json
 import os
 import sys
-import yaml
-import torch
+import tempfile
+
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-from torch.utils.data import DataLoader
+import torch
+import yaml
 
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.models import ParallelUFNO
-from src.data.dataset import InductionHardeningDataset
+from src.utils.plotting import Visualizer
+
+try:
+    from src.models import ParallelUFNO
+    from src.data.dataset import InductionHardeningDataset
+
+    HAS_MODEL = True
+except ImportError:
+    HAS_MODEL = False
+    print("Warning: Model dependencies not found. Comparison mode will be disabled.")
 
 
-def load_model(config_path, checkpoint_path, device):
+def load_and_process_data(filepath, mask_path=None):
+    """
+    Load simulation data and apply necessary preprocessing (swapping, flipping).
+    """
+    print(f"Loading data from {filepath}...")
+    data = np.load(filepath)
+
+    # Swap Austenite (1) and Martensite (2)
+    # This seems to be a specific fix for the current dataset version
+    print("Swapping Austenite (channel 1) and Martensite (channel 2)...")
+    data_copy = data.copy()
+    data[:, 1] = data_copy[:, 2]
+    data[:, 2] = data_copy[:, 1]
+    del data_copy
+
+    # Flip data along Z-axis (axis 2) to fix orientation
+    print("Flipping data along Z-axis (up/down)...")
+    data = np.flip(data, axis=2).copy()
+
+    mask = None
+    if mask_path and os.path.exists(mask_path):
+        print(f"Loading geometry mask from {mask_path}")
+        mask = np.load(mask_path)
+        # Flip mask along Z-axis (axis 0) to match data
+        mask = np.flip(mask, axis=0).copy()
+
+    return data, mask
+
+
+def run_inference(checkpoint_path, config_path, data_path, stats_path):
+    """
+    Run inference on the full sequence using the model.
+    """
+    if not HAS_MODEL:
+        raise ImportError("Model dependencies not available")
+
+    # Load Config
     with open(config_path, "r") as f:
         cfg = yaml.safe_load(f)
 
-    model = ParallelUFNO(
+    # Initialize Model
+    model = ParallelUFNO(  # type: ignore
         n_modes=tuple(cfg["model"]["n_modes"]),
         hidden_channels=cfg["model"]["hidden_channels"],
         in_channels=cfg["model"]["in_channels"],
@@ -35,199 +80,218 @@ def load_model(config_path, checkpoint_path, device):
         encoder_weights=cfg["model"]["encoder_weights"],
     )
 
-    state = torch.load(checkpoint_path, map_location=device, weights_only=False)
-    if "model_state_dict" in state:
-        state = state["model_state_dict"]
-
-    model.load_state_dict(state)
-    model.to(device)
+    # Load Checkpoint
+    print(f"Loading model from {checkpoint_path}...")
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    state_dict = checkpoint
+    if isinstance(checkpoint, dict):
+        if "model_state_dict" in checkpoint:
+            state_dict = checkpoint["model_state_dict"]
+        if "_metadata" in state_dict:
+            del state_dict["_metadata"]
+    model.load_state_dict(state_dict)
     model.eval()
-    return model, cfg
 
+    # Prepare Dataset
+    # Create a temporary split file to load just this file
+    filename = os.path.basename(data_path)
+    data_dir = os.path.dirname(data_path)
 
-def phases_to_rgb(phases_tensor):
-    """
-    Convert 3-channel phase probabilities to RGB image.
-    Mapping:
-    - R: Martensite (Channel 2) -> Hard
-    - G: Austenite (Channel 1) -> Transforming
-    - B: Initial/Ferrite (Channel 0 of phases, or implicit)
+    # Handle if data_path is inside npy_data or not
+    if os.path.basename(data_dir) == "npy_data":
+        root_dir = os.path.dirname(data_dir)
+    else:
+        root_dir = data_dir
 
-    Input: [C=3, H, W] (Aust, Mart, Initial) or similar
-    """
-    # Assuming output is [Temp, Aust, Mart, Initial] or [Temp, P1, P2, P3]
-    # Let's assume prediction output is [Temp, P_Aust, P_Mart, P_Init]
-    # We want RGB: R=Mart, G=Aust, B=Init
+    # Create temp split file
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
+        json.dump({"temp": [filename]}, tmp)
+        temp_split_path = tmp.name
 
-    # phases_tensor shape: [3, H, W] -> (Aust, Mart, Init)
-    aust = phases_tensor[0]
-    mart = phases_tensor[1]
-    init = phases_tensor[2]
+    try:
+        # Determine time steps from data
+        data_shape = np.load(data_path, mmap_mode="r").shape
+        T = data_shape[0]
 
-    rgb = np.stack([mart, aust, init], axis=-1)  # [H, W, 3]
-    return np.clip(rgb, 0, 1)
+        dataset = InductionHardeningDataset(  # type: ignore
+            data_dir=root_dir,
+            split="temp",
+            split_file=temp_split_path,
+            time_steps=T,
+        )
 
+        print("Running inference...")
+        preds = []
+        gts = []
 
-def visualize_batch(model, loader, device, output_dir, num_samples=1):
-    os.makedirs(output_dir, exist_ok=True)
+        with torch.no_grad():
+            for t in range(T):
+                x, y = dataset[t]
+                x = x.unsqueeze(0)  # Add batch dim
 
-    iter_loader = iter(loader)
-    inputs, targets = next(iter_loader)
-    inputs, targets = inputs.to(device), targets.to(device)
+                pred = model(x)
+                preds.append(pred)
+                gts.append(y.unsqueeze(0))
 
-    with torch.no_grad():
-        preds = model(inputs)
+        pred_tensor = torch.cat(preds, dim=0)
+        gt_tensor = torch.cat(gts, dim=0)
 
-        # Post-process predictions
-        pred_temp = preds[:, 0:1]
-        pred_phases_logits = preds[:, 1:]
-        pred_phases_prob = torch.softmax(pred_phases_logits, dim=1)
+        pred_data = pred_tensor.detach().cpu().numpy()
+        gt_data = gt_tensor.detach().cpu().numpy()
 
-        # Targets
-        target_temp = targets[:, 0:1]
-        target_phases = targets[:, 1:]
+        # Post-process predictions (Swap & Flip) to match visualization expectations
+        # Swap
+        pred_copy = pred_data.copy()
+        pred_data[:, 1] = pred_copy[:, 2]
+        pred_data[:, 2] = pred_copy[:, 1]
 
-    # Convert to numpy
-    inputs = inputs.cpu().numpy()
-    target_temp = target_temp.cpu().numpy()
-    target_phases = target_phases.cpu().numpy()
-    pred_temp = pred_temp.cpu().numpy()
-    pred_phases_prob = pred_phases_prob.cpu().numpy()
+        gt_copy = gt_data.copy()
+        gt_data[:, 1] = gt_copy[:, 2]
+        gt_data[:, 2] = gt_copy[:, 1]
 
-    for i in range(min(num_samples, inputs.shape[0])):
-        fig, axes = plt.subplots(2, 3, figsize=(15, 8))
+        # Flip
+        pred_data = np.flip(pred_data, axis=2).copy()
+        gt_data = np.flip(gt_data, axis=2).copy()
 
-        # Row 1: Temperature
-        # Input (t)
-        im0 = axes[0, 0].imshow(inputs[i, 0], cmap="hot", vmin=0, vmax=1)
-        axes[0, 0].set_title("Input Temp (t)")
-        plt.colorbar(im0, ax=axes[0, 0])
+        return gt_data, pred_data
 
-        # Target (t+1)
-        im1 = axes[0, 1].imshow(target_temp[i, 0], cmap="hot", vmin=0, vmax=1)
-        axes[0, 1].set_title("Target Temp (t+1)")
-        plt.colorbar(im1, ax=axes[0, 1])
-
-        # Pred (t+1)
-        im2 = axes[0, 2].imshow(pred_temp[i, 0], cmap="hot", vmin=0, vmax=1)
-        axes[0, 2].set_title("Pred Temp (t+1)")
-        plt.colorbar(im2, ax=axes[0, 2])
-
-        # Row 2: Phases (RGB)
-        # Target Phase
-        rgb_target = phases_to_rgb(target_phases[i])
-        axes[1, 1].imshow(rgb_target)
-        axes[1, 1].set_title("Target Phase (RGB)\nR:Mart, G:Aust, B:Init")
-
-        # Pred Phase
-        rgb_pred = phases_to_rgb(pred_phases_prob[i])
-        axes[1, 2].imshow(rgb_pred)
-        axes[1, 2].set_title("Pred Phase (RGB)")
-
-        # Error Map (Temp)
-        err = np.abs(target_temp[i, 0] - pred_temp[i, 0])
-        im_err = axes[1, 0].imshow(err, cmap="inferno")
-        axes[1, 0].set_title("Temp Error |T - P|")
-        plt.colorbar(im_err, ax=axes[1, 0])
-
-        plt.tight_layout()
-        save_path = os.path.join(output_dir, f"sample_{i}.png")
-        plt.savefig(save_path)
-        print(f"Saved plot to {save_path}")
-        plt.close()
-
-
-def make_animation(model, loader, device, output_dir, frames=50):
-    """Creates a GIF from a sequence of predictions."""
-    os.makedirs(output_dir, exist_ok=True)
-    print(f"Generating animation ({frames} frames)...")
-
-    # Collect frames
-    inputs_list = []
-    targets_list = []
-    preds_list = []
-
-    iter_loader = iter(loader)
-
-    with torch.no_grad():
-        for _ in range(frames):
-            try:
-                x, y = next(iter_loader)
-            except StopIteration:
-                break
-
-            x = x.to(device)
-            y_pred = model(x)
-
-            # Process only the first sample in batch
-            inputs_list.append(x[0, 0].cpu().numpy())  # Temp channel
-
-            # Target Phase RGB
-            t_ph = y[0, 1:].cpu().numpy()
-            targets_list.append(phases_to_rgb(t_ph))
-
-            # Pred Phase RGB
-            p_logits = y_pred[0, 1:]
-            p_prob = torch.softmax(p_logits, dim=0)
-            preds_list.append(phases_to_rgb(p_prob.cpu().numpy()))
-
-    # Setup Animation
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-
-    im_in = axes[0].imshow(inputs_list[0], cmap="hot", vmin=0, vmax=1)
-    axes[0].set_title("Input Temp")
-
-    im_tgt = axes[1].imshow(targets_list[0])
-    axes[1].set_title("Target Phase")
-
-    im_pred = axes[2].imshow(preds_list[0])
-    axes[2].set_title("Pred Phase")
-
-    def update(frame):
-        im_in.set_data(inputs_list[frame])
-        im_tgt.set_data(targets_list[frame])
-        im_pred.set_data(preds_list[frame])
-        return im_in, im_tgt, im_pred
-
-    ani = animation.FuncAnimation(fig, update, frames=len(inputs_list), blit=True)
-
-    save_path = os.path.join(output_dir, "prediction_video.gif")
-    ani.save(save_path, writer="pillow", fps=10)
-    print(f"Animation saved to {save_path}")
-    plt.close()
+    finally:
+        if os.path.exists(temp_split_path):
+            os.remove(temp_split_path)
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="config/model_config.yaml")
-    parser.add_argument("--checkpoint", default="outputs/models_weights/best_model.pth")
-    parser.add_argument("--data-dir", default="data/processed/npy_data")
-    parser.add_argument("--out-dir", default="outputs/figures")
-    parser.add_argument("--mode", choices=["plot", "animate"], default="plot")
+    parser = argparse.ArgumentParser(
+        description="Visualization for Induction Hardening Simulation"
+    )
+    parser.add_argument(
+        "--data", type=str, required=True, help="Path to simulation data file (.npy)"
+    )
+    parser.add_argument(
+        "--output", type=str, default="outputs/figures", help="Output directory"
+    )
+    parser.add_argument(
+        "--stats",
+        type=str,
+        default="data/processed/npy_data/normalization_stats.json",
+        help="Path to stats",
+    )
+    parser.add_argument(
+        "--mask",
+        type=str,
+        default="data/processed/npy_data/geometry_mask.npy",
+        help="Path to mask",
+    )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["gif", "snapshot", "compare", "all"],
+        default="all",
+        help="Visualization mode",
+    )
+    parser.add_argument("--fps", type=int, default=10, help="FPS for GIF")
+    parser.add_argument(
+        "--time_idx",
+        type=int,
+        default=-1,
+        help="Time index for snapshot (default: -1 for auto)",
+    )
+    parser.add_argument(
+        "--snapshot_time", type=float, default=1.0, help="Time in seconds for snapshot"
+    )
+
+    # Model args for comparison
+    parser.add_argument(
+        "--checkpoint", type=str, default="outputs/models_weights/best_model.pth"
+    )
+    parser.add_argument("--config", type=str, default="config/model_config.yaml")
+    parser.add_argument(
+        "--animate", action="store_true", help="Generate animation for comparison mode"
+    )
+
     args = parser.parse_args()
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Load Stats
+    stats = None
+    if os.path.exists(args.stats):
+        with open(args.stats, "r") as f:
+            stats = json.load(f)
+            print("Loaded normalization stats.")
 
-    # Load Model
-    model, cfg = load_model(args.config, args.checkpoint, device)
+    # Load Data
+    data, mask = load_and_process_data(args.data, args.mask)
 
-    # Load Data (Test set)
-    dataset = InductionHardeningDataset(
-        data_dir=args.data_dir,
-        split="test",
-        split_file="config/data_split.json",
-        time_steps=cfg.get("data", {}).get("time_steps", 100),
-    )
-    # Batch size 1 for animation sequence logic (if dataset is sequential)
-    # Or larger for plotting random samples
-    loader = DataLoader(
-        dataset, batch_size=4 if args.mode == "plot" else 1, shuffle=False
-    )
+    # Initialize Visualizer
+    viz = Visualizer(args.output, stats=stats, mask=mask)
 
-    if args.mode == "plot":
-        visualize_batch(model, loader, device, args.out_dir)
-    elif args.mode == "animate":
-        make_animation(model, loader, device, args.out_dir)
+    # Apply mask to data for visualization
+    data_masked = viz._apply_mask(data)
+
+    # Determine time index
+    T = data.shape[0]
+    if args.time_idx == -1:
+        time_idx = int(args.snapshot_time / 10.0 * (T - 1))
+        time_idx = max(0, min(time_idx, T - 1))
+    else:
+        time_idx = args.time_idx
+
+    filename_base = os.path.splitext(os.path.basename(args.data))[0]
+
+    # Actions
+    if args.mode in ["gif", "all"]:
+        print("\n=== Generating GIFs ===")
+        viz.create_animation(
+            data_masked,
+            0,
+            "Temperature Distribution",
+            f"{filename_base}_temp.gif",
+            args.fps,
+            "hot",
+        )
+        viz.create_animation(
+            data_masked,
+            1,
+            "Austenite Phase",
+            f"{filename_base}_austenite.gif",
+            args.fps,
+            "YlOrRd",
+        )
+        viz.create_animation(
+            data_masked,
+            2,
+            "Martensite Phase",
+            f"{filename_base}_martensite.gif",
+            args.fps,
+            "Blues",
+        )
+
+    if args.mode in ["snapshot", "all"]:
+        print("\n=== Generating Snapshots ===")
+        viz.plot_snapshot(data_masked, time_idx, f"{filename_base}_t{time_idx}")
+
+    if args.mode in ["compare", "all"]:
+        print("\n=== Running Comparison ===")
+        if HAS_MODEL:
+            gt, pred = run_inference(
+                args.checkpoint, args.config, args.data, args.stats
+            )
+            # Apply mask to predictions
+            gt = viz._apply_mask(gt)
+            pred = viz._apply_mask(pred)
+
+            viz.plot_comparison(
+                gt, pred, time_idx, f"{filename_base}_compare_t{time_idx}"
+            )
+
+            if args.animate:
+                print("\n=== Generating Comparison Animation ===")
+                viz.create_comparison_animation(
+                    gt, pred, f"{filename_base}_compare", args.fps
+                )
+        else:
+            print("Skipping comparison (model not available).")
+
+    print(f"\nAll visualizations saved to: {args.output}")
 
 
 if __name__ == "__main__":

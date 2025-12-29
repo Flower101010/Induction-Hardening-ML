@@ -20,11 +20,15 @@ def plot_loss(log_file, output_dir):
     plt.plot(epochs, train_loss, label="Train Loss", linewidth=2)
     plt.plot(epochs, val_loss, label="Validation Loss", linewidth=2, linestyle="--")
 
+    plt.yscale("log")  # Set y-axis to logarithmic scale
+
     plt.title("Training and Validation Loss")
     plt.xlabel("Epochs")
-    plt.ylabel("Loss")
+    plt.ylabel("Loss (Log Scale)")
     plt.legend()
-    plt.grid(True, alpha=0.3)
+    plt.grid(
+        True, alpha=0.3, which="both"
+    )  # 'both' adds grid lines for minor ticks in log scale
 
     os.makedirs(output_dir, exist_ok=True)
     save_path = os.path.join(output_dir, "loss_curve.png")

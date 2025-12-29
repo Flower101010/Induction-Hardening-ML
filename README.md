@@ -190,13 +190,13 @@ uv run scripts/plot_loss.py --log outputs/logs/loss_history.json
 **生成预测对比图 (静态)**:
 
 ```bash
-uv run scripts/visualize.py --mode plot --checkpoint outputs/models_weights/best_model.pth
+uv run scripts/visualize.py --data data/processed/npy_data/sim_f100000_i1.00.npy --mode snapshot --snapshot_time 5.0
 ```
 
 **生成预测动图 (GIF)**:
 
 ```bash
-uv run scripts/visualize.py --mode animate --checkpoint outputs/models_weights/best_model.pth
+uv run scripts/visualize.py --data data/processed/npy_data/sim_f100000_i1.00.npy --mode gif
 ```
 
 ### 5. 启动 Jupyter Notebook (用于实验)
@@ -204,6 +204,61 @@ uv run scripts/visualize.py --mode animate --checkpoint outputs/models_weights/b
 ```bash
 uv run jupyter lab
 ```
+
+## 🎨 可视化工具 (Visualization Tools)
+
+为了直观地评估模型效果，我们提供了 `scripts/visualize.py` 脚本，支持生成 2D 动态对比图和静态截图。
+
+### 使用方法
+
+**1. 生成动图 (GIF)**
+生成温度、奥氏体、马氏体随时间变化的动图。
+
+```bash
+uv run scripts/visualize.py --data data/processed/npy_data/sim_f100000_i1.00.npy --mode gif
+```
+
+**2. 生成特定时刻截图 (Snapshot)**
+生成指定时间点（如 5.0秒）的物理场分布图。
+
+```bash
+uv run scripts/visualize.py --data data/processed/npy_data/sim_f100000_i1.00.npy --mode snapshot --snapshot_time 5.0
+```
+
+**3. 模型预测对比 (Compare)**
+加载训练好的模型，对比预测结果与 Ground Truth。
+
+- 默认生成指定时刻的静态对比图。
+- 加上 `--animate` 参数可生成随时间变化的对比动图。
+
+```bash
+# 静态对比
+uv run scripts/visualize.py --data data/processed/npy_data/sim_f100000_i1.00.npy --mode compare --checkpoint outputs/models_weights/best_model.pth
+
+# 动态对比 (生成 GIF)
+uv run scripts/visualize.py --data data/processed/npy_data/sim_f100000_i1.00.npy --mode compare --checkpoint outputs/models_weights/best_model.pth --animate
+```
+
+### 参数说明
+
+- `--data`: 输入的 `.npy` 仿真数据路径 (必须)。
+- `--mode`: 可视化模式 (`gif`, `snapshot`, `compare`, `all`)。
+- `--output`: 输出目录 (默认: `outputs/figures`)。
+- `--fps`: GIF 帧率 (默认: 10)。
+- `--snapshot_time`: 截图的时间点 (秒)。
+- `--checkpoint`: 模型权重路径 (仅 `compare` 模式需要)。
+- `--config`: 模型配置文件路径 (默认 `config/model_config.yaml`)。
+- `--animate`: 在 `compare` 模式下生成动态对比图 (可选)。
+
+### 输出结果
+
+- **对称性重建**: 脚本会自动将 2D 轴对称数据 (r, z) 沿 r 轴镜像，展示完整的截面视图。
+- **反归一化**: 温度场会自动反归一化为真实温度 (°C)。
+
+### 注意事项
+
+- **归一化**: 脚本会自动读取 `normalization_stats.json` 进行温度反归一化。
+- **相变场**: 相变分数 (0-1) 直接显示，无需反归一化。
 
 ## 📊 任务分工 (Draft)
 

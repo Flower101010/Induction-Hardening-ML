@@ -113,7 +113,7 @@ def finalize_stats(total):
     }
 
 
-def evaluate(model, loader, device, mask=None):
+def evaluate(model, loader, device, mask=None, time_steps=100, num_files=0):
     model.eval()
     totals = {
         "temp_mse_num": 0.0,
@@ -126,8 +126,14 @@ def evaluate(model, loader, device, mask=None):
         "rel_l2_den": 0.0,
     }
 
+    # Track per-file errors
+    file_numerators = np.zeros(num_files)
+    file_denominators = np.zeros(num_files)
+    global_idx = 0
+
     with torch.no_grad():
         for x, y in tqdm(loader, desc="Evaluating"):
+            batch_size = x.shape[0]
             x = x.to(device)
             y = y.to(device)
 
@@ -143,7 +149,34 @@ def evaluate(model, loader, device, mask=None):
             batch_stats = compute_stats(pred_full, y, mask)
             merge_stats(totals, batch_stats)
 
-    return finalize_stats(totals)
+            # Per-sample error tracking for finding best file
+            diff_sq = (pred_full - y) ** 2
+            target_sq = y**2
+
+            if mask is not None:
+                mask_bhw = mask.view(1, 1, mask.shape[0], mask.shape[1]).to(device)
+                diff_sq = diff_sq * mask_bhw
+                target_sq = target_sq * mask_bhw
+
+            # Sum over C, H, W
+            err_sum = diff_sq.sum(dim=[1, 2, 3]).cpu().numpy()
+            target_sum = target_sq.sum(dim=[1, 2, 3]).cpu().numpy()
+
+            for i in range(batch_size):
+                sample_idx = global_idx + i
+                file_idx = sample_idx // time_steps
+                if file_idx < num_files:
+                    file_numerators[file_idx] += err_sum[i]
+                    file_denominators[file_idx] += target_sum[i]
+
+            global_idx += batch_size
+
+    # Calculate best file
+    file_rel_l2 = np.sqrt(file_numerators / (file_denominators + 1e-8))
+    best_file_idx = np.argmin(file_rel_l2)
+    best_file_error = file_rel_l2[best_file_idx]
+
+    return finalize_stats(totals), best_file_idx, best_file_error
 
 
 def main():
@@ -203,7 +236,14 @@ def main():
     model.to(device)
 
     # Eval
-    metrics = evaluate(model, loader, device, mask)
+    metrics, best_idx, best_error = evaluate(
+        model,
+        loader,
+        device,
+        mask,
+        time_steps=dataset.time_steps,
+        num_files=len(dataset.file_list),
+    )
 
     # Save
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
@@ -213,6 +253,12 @@ def main():
     print("\nEvaluation metrics:")
     for k, v in metrics.items():
         print(f"  {k}: {v:.6f}")
+
+    print("-" * 30)
+    best_filename = dataset.file_list[best_idx]
+    print(f"Best performing file: {best_filename}")
+    print(f"Best Relative L2 Error: {best_error:.6f}")
+    print("-" * 30)
 
     # Interpretation
     rel_l2 = metrics["relative_l2"]
