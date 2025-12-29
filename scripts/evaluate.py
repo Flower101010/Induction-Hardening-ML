@@ -190,7 +190,15 @@ def main():
 
     # Model
     model = build_model(cfg)
-    state = torch.load(args.checkpoint, map_location=device)
+    state = torch.load(args.checkpoint, map_location=device, weights_only=False)
+
+    # Handle potential wrapper keys or metadata
+    if isinstance(state, dict):
+        if "model_state_dict" in state:
+            state = state["model_state_dict"]
+        if "_metadata" in state:
+            del state["_metadata"]
+
     model.load_state_dict(state)
     model.to(device)
 
@@ -205,6 +213,21 @@ def main():
     print("\nEvaluation metrics:")
     for k, v in metrics.items():
         print(f"  {k}: {v:.6f}")
+
+    # Interpretation
+    rel_l2 = metrics["relative_l2"]
+    if rel_l2 < 0.02:
+        print(
+            f"\n[SUCCESS] Excellent performance! Relative L2 Error ({rel_l2:.2%}) is below 2%."
+        )
+    elif rel_l2 < 0.05:
+        print(
+            f"\n[PASS] Good performance. Relative L2 Error ({rel_l2:.2%}) is below 5%."
+        )
+    else:
+        print(
+            f"\n[WARNING] Performance may need improvement. Relative L2 Error is {rel_l2:.2%}."
+        )
 
 
 if __name__ == "__main__":

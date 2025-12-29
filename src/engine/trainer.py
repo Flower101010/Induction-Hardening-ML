@@ -1,5 +1,6 @@
 import torch
 import os
+import json
 from tqdm import tqdm
 
 
@@ -35,6 +36,9 @@ class Trainer:
         # 创建输出目录
         os.makedirs("outputs/models_weights", exist_ok=True)
         os.makedirs("outputs/logs", exist_ok=True)
+
+        # Initialize loss history
+        self.history = {"train_loss": [], "val_loss": []}
 
     def train_epoch(self, epoch):
         self.model.train()
@@ -85,6 +89,13 @@ class Trainer:
         for epoch in range(1, self.epochs + 1):
             train_loss = self.train_epoch(epoch)
             val_loss = self.validate(epoch)
+
+            # Record and save history
+            self.history["train_loss"].append(train_loss)
+            self.history["val_loss"].append(val_loss)
+
+            with open("outputs/logs/loss_history.json", "w") as f:
+                json.dump(self.history, f, indent=2)
 
             if self.scheduler:
                 self.scheduler.step()

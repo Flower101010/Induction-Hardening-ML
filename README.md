@@ -37,6 +37,19 @@
 如果你想了解核心算法 FNO 的原理、数据维度定义以及常见问题，请阅读：
 👉 **[FNO 模型使用指南 & 原理说明](docs/model_guide.md)**
 
+## 📊 数据结构说明
+
+本项目的数据经过预处理后，统一保存为 `.npy` 格式，张量形状遵循 **PyTorch 标准 (Channel First)**：
+
+- **张量形状**: `(Batch_Size, Channels, Height, Width)`
+- **通道定义**:
+  - `Channel 0`: 温度 (Temperature, 归一化)
+  - `Channel 1`: 奥氏体 (Austenite)
+  - `Channel 2`: 马氏体 (Martensite)
+  - `Channel 3`: 初始相 (Initial Phase)
+
+训练过程中，模型会读取这些 `.npy` 文件，并结合 `geometry_mask.npy` (几何掩码) 进行物理场预测。
+
 ## 🚀 环境配置 (极速版)
 
 本项目使用 **[uv](https://github.com/astral-sh/uv)** 进行依赖管理，确保所有成员环境完全一致。请务必按照以下步骤操作，**不要使用传统的 pip install**。
@@ -76,7 +89,7 @@ uv run scripts/demo_fno_synth.py
 
 ```text
 Induction-Hardening-ML/
-├── configs/                # 存放 yaml 配置文件 (模型参数、训练参数)
+├── config/                 # 存放 yaml 配置文件 (模型参数、训练参数)
 ├── data/
 │   ├── raw/                # 原始数据 (老师发的)
 │   └── processed/          # 预处理后的数据 (.npy)
@@ -155,16 +168,38 @@ Induction-Hardening-ML/
 ### 2. 训练模型
 
 ```bash
-uv run scripts/train.py --config configs/train_config.yaml
+uv run scripts/train.py --config config/model_config.yaml
 ```
 
 ### 3. 预测与评估
 
 ```bash
-uv run scripts/evaluate.py --config configs/model_config.yaml --checkpoint outputs/models_weights/best_model.pth
+uv run scripts/evaluate.py --config config/model_config.yaml --checkpoint outputs/models_weights/best_model.pth
 ```
 
-### 4. 启动 Jupyter Notebook (用于实验)
+### 4. 可视化分析
+
+训练完成后，可以使用以下脚本生成图表：
+
+**绘制 Loss 曲线**:
+
+```bash
+uv run scripts/plot_loss.py --log outputs/logs/loss_history.json
+```
+
+**生成预测对比图 (静态)**:
+
+```bash
+uv run scripts/visualize.py --mode plot --checkpoint outputs/models_weights/best_model.pth
+```
+
+**生成预测动图 (GIF)**:
+
+```bash
+uv run scripts/visualize.py --mode animate --checkpoint outputs/models_weights/best_model.pth
+```
+
+### 5. 启动 Jupyter Notebook (用于实验)
 
 ```bash
 uv run jupyter lab
