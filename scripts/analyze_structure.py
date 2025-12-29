@@ -1,135 +1,107 @@
 import pandas as pd
 import re
-import os
-
-# ==========================================
-# 用户配置区
-# ==========================================
-file_path = "data/raw/training_data.csv"  #
-# ==========================================
+import csv
+import io
 
 
-def analyze_comsol_structure(filepath):
-    print(f"正在分析文件: {filepath} ...\n")
+def parse_specific_comsol_header(file_path):
+    print(f"正在读取文件头: {file_path}")
 
-    # --- 步骤 1: 纯文本探测 (寻找表头行) ---
-    header_line_index = -1
-    header_raw = ""
-    comment_lines_count = 0
+    header_line = ""
+    # 1. 寻找表头 (包含 'f_set=' 和 '@' 的行)
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        for i, line in enumerate(f):
+            if "f_set=" in line and "@" in line:
+                header_line = line.strip()
+                print(f"✅ 在第 {i + 1} 行找到表头。")
+                break
 
-    try:
-        with open(filepath, "r", encoding="utf-8") as f:
-            # 只读前 50 行找规律，避免读取大文件
-            for i in range(50):
-                line = f.readline()
-                if not line:
-                    break
+    if not header_line:
+        print("❌ 未找到符合格式的表头。")
+        return None
 
-                if line.strip().startswith("%"):
-                    comment_lines_count += 1
-                    # COMSOL 的表头通常是最后一个带 % 的行
-                    header_line_index = i
-                    header_raw = line.strip()
-                else:
-                    # 一旦遇到没有 % 的行，说明数据开始了
-                    break
-    except FileNotFoundError:
-        print("❌ 错误: 找不到文件，请检查路径。")
-        return
+    # 2. 分割列
+    reader = csv.reader(io.StringIO(header_line), delimiter=",")
+    columns = next(reader)
+    print(f"总列数: {len(columns)}")
 
-    print("=== 1. 文件元数据分析 ===")
-    if header_line_index != -1:
-        print(f"✅ 找到 COMSOL 注释头，共 {comment_lines_count} 行")
-        print(f"✅ 表头位于第 {header_line_index + 1} 行")
-        print(
-            f"ℹ️ 原始表头内容: {header_raw[:100]}..."
-            + (" (内容过长已截断)" if len(header_raw) > 100 else "")
-        )
-    else:
-        print("⚠️ 未找到以 '%' 开头的标准 COMSOL 表头，尝试作为普通 CSV 读取。")
+    parsed_data = []
+    coord_cols = []
 
-    # --- 步骤 2: Pandas 采样读取 (只读 5 行) ---
-    print("\n=== 2. 数据结构采样 (只读前 5 行) ===")
-    try:
-        # 如果找到了表头，用 header=None 读取，因为我们自己处理列名会更灵活
-        # skiprows 跳过除最后一行注释外的所有注释
-        skip_rows = range(header_line_index) if header_line_index > 0 else None
+    # 3. 针对性正则匹配
+    # 目标格式: T (°C) @ t=0; f_set=50000; I_factor=0.85
+    # 提取逻辑:
+    #   Group 1 (变量):  (.*?)             -> T (°C)
+    #   Group 2 (时间):  t=([0-9.E+-]+)    -> 0
+    #   Group 3 (频率):  f_set=([0-9.E+-]+) -> 50000
+    #   Group 4 (电流):  I_factor=([0-9.E+-]+) -> 0.85
 
-        # 尝试读取
-        df_sample = pd.read_csv(
-            filepath,
-            skiprows=skip_rows,
-            nrows=5,
-            header=None if header_line_index != -1 else "infer",
-        )
+    pattern = re.compile(
+        r"(.*?)@\s*t=([0-9.E+-]+);\s*f_set=([0-9.E+-]+);\s*I_factor=([0-9.E+-]+)"
+    )
 
-        # 如果是 COMSOL 格式，第一行通常包含 %，需要清理
-        if header_line_index != -1:
-            # 获取读取进来的第一行作为列名
-            raw_columns = df_sample.iloc[0].astype(str).tolist()
-            # 清理列名中的 % 和空格
-            clean_columns = [col.replace("%", "").strip() for col in raw_columns]
-            df_sample.columns = clean_columns
-            df_sample = df_sample[1:].reset_index(drop=True)  # 去掉变成列名的那一行数据
+    for idx, col_str in enumerate(columns):
+        col_clean = col_str.strip()
 
-        num_rows_sample, num_cols = df_sample.shape
-        print(f"📊 列总数: {num_cols} 列")
-        print("   (如果这是参数化扫描，列数通常 = 坐标列数 + 变量数 * 参数组数)")
-
-    except Exception as e:
-        print(f"❌ 读取失败: {e}")
-        return
-
-    # --- 步骤 3: 列名模式识别 ---
-    print("\n=== 3. 列内容智能识别 ===")
-
-    cols = df_sample.columns.tolist()
-
-    # 1. 识别坐标列 (通常是 x, y, z, r, phi 等)
-    coord_cols = [c for c in cols if c.lower() in ["x", "y", "z", "r", "phi", "theta"]]
-    print(f"📍 坐标列 ({len(coord_cols)} 个): {coord_cols}")
-
-    # 2. 识别参数数据列 (包含 @, =, freq, time 等特征)
-    # COMSOL 典型格式: "Temperature (K) @ t=0.1" 或 "B_z @ freq=50"
-    data_cols = [c for c in cols if c not in coord_cols]
-
-    if len(data_cols) > 0:
-        example_col = data_cols[0]
-        print(f"📉 数据列 ({len(data_cols)} 个)")
-        print(f"   示例列名: '{example_col}'")
-
-        # 尝试解析参数
-        # 匹配规则: 找 = 后面的数字
-        match = re.search(r"=\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)", example_col)
+        # 尝试匹配参数列
+        match = pattern.search(col_clean)
         if match:
-            param_val = match.group(1)
-            print(f"   ✅ 成功从示例列名中提取出参数值: {param_val}")
-            print("   🧠 推测: 这是一个宽表，每一列对应一个参数步。")
-            if len(data_cols) % 64 == 0:
-                print("   🔍 发现数据列数是 64 的倍数，与你提到的 '64组数据' 吻合！")
+            var_raw = match.group(1).strip()
+            t_val = float(match.group(2))
+            f_val = float(match.group(3))
+            i_val = float(match.group(4))
+
+            # 变量名标准化
+            if "T" in var_raw:
+                var_name = "Temperature"
+            elif "phase1" in var_raw:
+                var_name = "Martensite"  # 假设
+            elif "phase5" in var_raw:
+                var_name = "Austenite"  # 假设
+            else:
+                var_name = var_raw
+
+            parsed_data.append(
+                {
+                    "col_idx": idx,
+                    "variable": var_name,
+                    "time": t_val,
+                    "f_set": f_val,
+                    "I_factor": i_val,
+                }
+            )
         else:
-            print("   ⚠️ 无法自动从列名提取参数，可能列名格式较特殊，或者没有参数标签。")
+            # 记录坐标列 (% r, z 等)
+            if idx < 5:  # 通常坐标在前几列
+                coord_cols.append({"col_idx": idx, "name": col_clean})
 
+    # 4. 保存结果
+    df_map = pd.DataFrame(parsed_data)
+
+    if not df_map.empty:
+        print("-" * 50)
+        print(f"解析成功！捕获参数列: {len(df_map)}")
+        print(f"坐标列: {[c['name'] for c in coord_cols]}")
+        print(f"变量: {df_map['variable'].unique()}")
+        print(f"时间步数: {df_map['time'].nunique()}")
+        print(f"频率组 (f_set): {df_map['f_set'].nunique()}")
+        print(f"电流组 (I_factor): {df_map['I_factor'].nunique()}")
+
+        # 保存映射表
+        df_map.to_csv("data/comsol_column_map.csv", index=False)
+        print("\n✅ 映射表已保存为 'data/comsol_column_map.csv'")
+
+        # 保存坐标列索引
+        pd.DataFrame(coord_cols).to_csv("data/comsol_coord_map.csv", index=False)
     else:
-        print("⚠️ 没有检测到数据列，请检查文件内容。")
+        print("❌ 解析失败，正则未匹配到任何列。")
 
-    # --- 步骤 4: 内存估算 ---
-    # 假设 float64 占 8 bytes
-    # 我们不知道总行数，但可以通过文件大小估算
-    file_size_mb = os.path.getsize(filepath) / (1024 * 1024)
-    print("\n=== 4. 资源估算 ===")
-    print(f"💾 文件大小: {file_size_mb:.2f} MB")
-
-    if file_size_mb > 1000:
-        print(
-            "🚨 文件超过 1GB，建议使用分块处理 (Chunking) 或 Dask，不要一次性读入 Pandas。"
-        )
-    elif file_size_mb > 200:
-        print("⚠️ 文件较大，处理时请留意内存。")
-    else:
-        print("✅ 文件大小适中，可以直接加载。")
+    return df_map
 
 
-# 运行分析
+# ============================
+file_path = "data/raw/training_data.csv"  # 请确保路径正确
+# ============================
+
 if __name__ == "__main__":
-    analyze_comsol_structure(file_path)
+    parse_specific_comsol_header(file_path)

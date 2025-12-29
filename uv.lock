@@ -629,6 +629,7 @@ name = "induction-hardening-ml"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "h5py" },
     { name = "jupyterlab" },
     { name = "matplotlib" },
     { name = "neuraloperator" },
@@ -646,6 +647,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "h5py", specifier = ">=3.15.1" },
     { name = "jupyterlab", specifier = ">=4.5.0" },
     { name = "matplotlib", specifier = ">=3.10.7" },
     { name = "neuraloperator", specifier = ">=2.0.0" },

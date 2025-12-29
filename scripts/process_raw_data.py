@@ -1,161 +1,147 @@
 import pandas as pd
-import re
+import numpy as np
 import os
 
-# ================= 用户配置区 =================
-# 输入文件路径 (请修改为你实际的文件名)
-INPUT_FILE = "data/raw/training_data.csv"
 
-# 输出文件夹路径 (脚本会自动创建)
-OUTPUT_DIR = "data/processed_parquet"
+def generate_ml_dataset(
+    raw_file_path, map_file_path, output_file="final_ml_dataset.parquet"
+):
+    print(f"1. 加载映射表: {map_file_path}")
+    df_map = pd.read_csv(map_file_path)
 
-# 每次处理的行数 (2000行是一个在速度和内存之间很好的平衡点)
-CHUNK_SIZE = 2000
-# ============================================
+    # --- 步骤 A: 提取元数据索引 ---
+    # 我们知道数据是每3列一组：Temp, Aust, Mart
+    # 提取 Temperature 对应的行，作为“基准时间步”
+    base_map = df_map[df_map["variable"] == "Temperature"].reset_index(drop=True)
 
+    # 获取每一类变量的列索引 (Excel/CSV中的列号)
+    # 注意：你的map里 col_idx 是绝对索引
+    idx_temp = df_map[df_map["variable"] == "Temperature"]["col_idx"].values
+    idx_aust = df_map[df_map["variable"] == "Austenite"]["col_idx"].values
+    idx_mart = df_map[df_map["variable"] == "Martensite"]["col_idx"].values
 
-def extract_metadata_from_header(header_line):
-    """
-    解析 COMSOL 复杂的表头，生成列名到参数的映射字典。
-    """
-    # 去掉开头的 %，按逗号分割，并去除首尾空格
-    raw_cols = [c.strip() for c in header_line.replace("%", "").strip().split(",")]
-
-    meta_map = {}
-
-    # 定义坐标列 (通常前两列是坐标，根据你的数据调整)
-    coord_cols = ["r", "z"]
-
-    print(f"正在解析 {len(raw_cols)} 个列名信息，请稍候...")
-
-    for col in raw_cols:
-        if col in coord_cols:
-            continue
-
-        # --- 正则表达式提取核心逻辑 ---
-        # 1. 提取物理量名称 (截取 @ 符号前面的部分)
-        # 例如 "T (degC) @ ..." -> "T"
-        if "@" in col:
-            phys_name_part = col.split("@")[0].strip()
-        else:
-            # 应对某些没写 @ 的异常情况，直接用整个列名
-            phys_name_part = col
-
-        # 去掉括号内的单位，例如 "T (degC)" -> "T"
-        phys_name = re.sub(r"\s*.∗?.*?.∗?", "", phys_name_part).strip()
-
-        # 2. 提取参数数值 (支持整数、小数、科学计数法)
-        # 查找 t=..., f_set=..., I_factor=...
-        t_match = re.search(r"t=\s*([-+]?[\d\.eE]+)", col)
-        f_match = re.search(r"f_set=\s*([-+]?[\d\.eE]+)", col)
-        i_match = re.search(r"I_factor=\s*([-+]?[\d\.eE]+)", col)
-
-        meta_map[col] = {
-            "variable": phys_name,  # 物理量名称 (T, audc.phase5.xi 等)
-            "t": float(t_match.group(1)) if t_match else 0.0,
-            "f": float(f_match.group(1)) if f_match else 0.0,
-            "I": float(i_match.group(1)) if i_match else 0.0,
-        }
-
-    return raw_cols, coord_cols, meta_map
-
-
-def process_big_csv():
-    # 创建输出目录
-    if not os.path.exists(OUTPUT_DIR):
-        os.makedirs(OUTPUT_DIR)
-        print(f"创建输出目录: {OUTPUT_DIR}")
-
-    # --- 第一步：稳健地查找并读取表头 ---
-    print("Step 1: 扫描文件表头...")
-
-    last_comment = None
-    header_row_index = -1
-
-    try:
-        with open(INPUT_FILE, "r", encoding="utf-8") as f:
-            # 扫描前 100 行寻找表头
-            for i in range(100):
-                line = f.readline()
-                if not line:
-                    break
-
-                # 记录最后一行以 % 开头的行
-                if line.strip().startswith("%"):
-                    last_comment = line
-                    header_row_index = i
-
-                # 如果遇到非注释且非空的行，说明注释区结束
-                if not line.strip().startswith("%") and line.strip():
-                    break
-    except FileNotFoundError:
-        print(f"❌ 错误: 找不到文件 '{INPUT_FILE}'")
+    # 验证长度一致
+    n_steps = len(base_map)
+    if not (len(idx_temp) == len(idx_aust) == len(idx_mart)):
+        print("错误：三种变量的列数不一致，无法对齐！")
         return
 
-    # 检查是否找到表头
-    if last_comment is None:
-        print("❌ 错误: 未找到以 '%' 开头的表头行。请检查 CSV 格式。")
-        return
+    # 提取对应的特征向量 (每个时间步的 t, f, I) -> Shape: (N_steps, )
+    meta_time = base_map["time"].values
+    meta_freq = base_map["f_set"].values
+    meta_curr = base_map["I_factor"].values
 
-    print(f"✅ 找到表头 (位于第 {header_row_index + 1} 行)")
-
-    # 解析表头元数据
-    raw_cols, coord_cols, meta_map = extract_metadata_from_header(last_comment)
-    print(f"✅ 解析完成！将处理 {len(meta_map)} 个数据变量列。")
-
-    # --- 第二步：分块读取并清洗 ---
-    print(f"\nStep 2: 开始分块转换 (Chunk Size: {CHUNK_SIZE})...")
-
-    # 使用 Pandas 读取，跳过前面的注释行
-    # 注意：names=raw_cols 强制指定列名，避免 pandas 再次去读表头
-    reader = pd.read_csv(
-        INPUT_FILE, comment="%", header=None, names=raw_cols, chunksize=CHUNK_SIZE
+    print(f"   - 检测到时间步/参数组合数: {n_steps}")
+    print(
+        f"   - 预计转换后的总行数: 8192节点 * {n_steps}步 ≈ {8192 * n_steps // 1000000} 百万行"
     )
 
-    chunk_id = 0
-    total_rows_processed = 0
+    # --- 步骤 B: 分块处理原始大文件 ---
+    # 假设前两列是坐标 (r, z)，如果不是请修改这里
+    coord_cols = [0, 1]
 
-    for chunk in reader:
-        print(f"   >>> 正在处理第 {chunk_id + 1} 块...", end="\r")
+    # 这里的 chunksize 是“行数”（即网格节点数）。
+    # 一次处理 1000 个节点。1000 * 6400步 = 640万行输出，内存占用约 500MB，很安全。
+    chunk_size = 1000
 
-        # 1. 宽表转长表 (Melt)
-        # 将 [r, z, T@t1, T@t2...] 转换为 [r, z, 原列名, 数值]
-        melted = pd.melt(
-            chunk, id_vars=coord_cols, var_name="original_col", value_name="value"
+    # 确定表头行号 (根据你之前的日志，表头在第9行，即 header=8)
+    header_row = 8
+
+    print(f"2. 开始读取原始数据 ({raw_file_path})...")
+    reader = pd.read_csv(raw_file_path, header=header_row, chunksize=chunk_size)
+
+    # 准备输出文件 (如果存在先删除)
+    if os.path.exists(output_file):
+        os.remove(output_file)
+
+    total_nodes_processed = 0
+
+    for chunk_i, chunk in enumerate(reader):
+        print(
+            f"\r   正在处理节点块 {chunk_i + 1} (已处理 {total_nodes_processed} 节点)...",
+            end="",
         )
 
-        # 2. 映射元数据
-        # 将 original_col 替换为具体的 t, f, I, variable
-        # 为了性能，先将 meta_map 转换为 DataFrame 进行 Merge
-        meta_df = pd.DataFrame.from_dict(meta_map, orient="index")
-        meta_df.index.name = "original_col"
+        # 1. 提取坐标 (N_nodes, 2)
+        # 假设第0列是r，第1列是z。如果你的CSV里坐标列名包含 '%'，pandas可能读成 '% r'
+        # 我们直接按位置取前两列最稳
+        coords = chunk.iloc[:, coord_cols].values
+        n_nodes = len(coords)
 
-        # 合并数据
-        processed_chunk = melted.merge(meta_df, on="original_col", how="left")
+        # 2. 提取三种变量的数据矩阵 (N_nodes, N_steps)
+        # 使用 numpy 的切片读取，速度极快
+        # 注意：iloc 需要整数位置索引
+        data_temp = chunk.iloc[:, idx_temp].values
+        data_aust = chunk.iloc[:, idx_aust].values
+        data_mart = chunk.iloc[:, idx_mart].values
 
-        # 3. 清理不需要的列
-        processed_chunk.drop(columns=["original_col"], inplace=True)
+        # 3. 核心：构建宽变长的输出矩阵
+        # 目标：我们需要把 (N_nodes, N_steps) 拉直
 
-        # 4. 数据类型优化 (Float64 -> Float32)
-        # 这对于 ML 至关重要，能节省 50% 内存
-        cols_to_float32 = ["t", "f", "I", "value"] + coord_cols
-        for col in cols_to_float32:
-            if col in processed_chunk.columns:
-                processed_chunk[col] = processed_chunk[col].astype("float32")
+        # A. 坐标重复: 每个节点重复 N_steps 次
+        # [r1, r1... r2, r2...]
+        batch_r = np.repeat(coords[:, 0], n_steps)
+        batch_z = np.repeat(coords[:, 1], n_steps)
 
-        # 5. 保存为 Parquet 小文件
-        save_name = f"{OUTPUT_DIR}/part_{chunk_id:04d}.parquet"
-        processed_chunk.to_parquet(save_name, index=False)
+        # B. 参数重复: 每个节点都经历完整的 meta_time 序列
+        # [t1, t2... t1, t2...]
+        batch_time = np.tile(meta_time, n_nodes)  # pyright: ignore[reportArgumentType, reportCallIssue]
+        batch_freq = np.tile(meta_freq, n_nodes)  # pyright: ignore[reportCallIssue, reportArgumentType]
+        batch_curr = np.tile(meta_curr, n_nodes)  # pyright: ignore[reportArgumentType, reportCallIssue]
 
-        total_rows_processed += len(chunk)
-        chunk_id += 1
+        # C. 变量拉直: (N_nodes * N_steps)
+        # flatten 默认按行优先，正好对应 repeat 坐标
+        flat_temp = data_temp.flatten()
+        flat_aust = data_aust.flatten()
+        flat_mart = data_mart.flatten()
 
-    print("\n\n✅ 全部完成！")
-    print(f"📁 清洗后的数据已保存在: {OUTPUT_DIR}/")
-    print(
-        f"🧠 接下来的建议: 使用 pd.read_parquet('{OUTPUT_DIR}') 即可读取整个数据集用于训练。"
-    )
+        # 4. 组装 DataFrame
+        df_batch = pd.DataFrame(
+            {
+                "r": batch_r,
+                "z": batch_z,
+                "time": batch_time,
+                "freq": batch_freq,
+                "current": batch_curr,
+                "Temperature": flat_temp,
+                "Austenite": flat_aust,
+                "Martensite": flat_mart,
+            }
+        )
 
+        # 5. 写入文件
+        # 推荐使用 Parquet 格式，因为它支持分块追加 (append) 且体积小
+        # 如果没有安装 pyarrow，可以改用 to_csv (mode='a')
+        if output_file.endswith(".parquet"):
+            if not os.path.exists(output_file):
+                df_batch.to_parquet(output_file, engine="pyarrow", index=False)
+            else:
+                # Append 模式稍微麻烦点，通常建议写成多个小parquet文件
+                # 为了简单，这里我们将每个 chunk 写为一个单独的文件，或者使用 fastparquet 的 append
+                # 【简易方案】写成多个文件，后续读取时 dataset 读取文件夹即可
+                part_file = output_file.replace(".parquet", f"_part_{chunk_i}.parquet")
+                df_batch.to_parquet(part_file, index=False)
+        else:
+            # CSV 追加模式
+            header = chunk_i == 0
+            df_batch.to_csv(output_file, mode="a", header=header, index=False)
+
+        total_nodes_processed += n_nodes
+
+    print("\n\n[完成] 数据转换结束！")
+    print(f"文件已保存为: {output_file} (或其分块文件)")
+    print("现在你可以直接读取这个文件进行机器学习训练了。")
+    print("-" * 30)
+    print("ML 模型输入特征 (X): ['r', 'z', 'time', 'freq', 'current']")
+    print("ML 模型预测目标 (Y): ['Temperature', 'Austenite', 'Martensite']")
+
+
+# ==========================================
+# 配置路径
+# ==========================================
+raw_csv = "data/raw/training_data.csv"  # COMSOL 原始大文件
+map_csv = "data/comsol_column_map.csv"  # 刚才生成的映射表
+output_name = "data/processed/processed_dataset.csv"  # 输出文件名 (建议用 .csv 方便查看，大数据建议 .parquet)
 
 if __name__ == "__main__":
-    process_big_csv()
+    generate_ml_dataset(raw_csv, map_csv, output_name)
