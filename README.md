@@ -42,11 +42,11 @@
    本项目的数据经过预处理后，统一保存为 `.npy` 格式，张量形状遵循 **PyTorch 标准 (Channel First)**：
 
 - **张量形状**: `(Batch_Size, Channels, Height, Width)`
-- **通道定义**:
-- `Channel 0`: 温度 (Temperature, 归一化)
-- `Channel 1`: 奥氏体 (Austenite)
-- `Channel 2`: 马氏体 (Martensite)
-- `Channel 3`: 初始相 (Initial Phase)
+- **通道定义 (⚠️ 严禁混淆)**:
+  - `Channel 0`: **温度** (Temperature, 归一化)
+  - `Channel 1`: **奥氏体** (Austenite)
+  - `Channel 2`: **马氏体** (Martensite)
+  - `Channel 3`: **初始相** (Initial Phase)
 
    训练过程中，模型会读取这些 `.npy` 文件，并结合 `geometry_mask.npy` (几何掩码) 进行物理场预测。
 
@@ -229,28 +229,25 @@
    生成温度、奥氏体、马氏体随时间变化的动图。
 
    ```bash
-   uv run main.py visualize --data data/processed/npy_data/sim_f100000_i1.05.npy --mode gif
+   uv run main.py visualize --data data/processed/npy_data/sim_f100000_i1.15.npy --mode gif
    ```
 
    **2. 生成特定时刻截图 (Snapshot)**
    生成指定时间点（如 5.0秒）的物理场分布图。
 
    ```bash
-   uv run main.py visualize --data data/processed/npy_data/sim_f100000_i1.05.npy --mode snapshot --snapshot_time 5.0
+   uv run main.py visualize --data data/processed/npy_data/sim_f100000_i1.15.npy --mode snapshot --snapshot_time 5.0 --duration 10.0
    ```
 
    **3. 模型预测对比 (Compare)**
    加载训练好的模型，对比预测结果与 Ground Truth。
 
-- 默认生成指定时刻的静态对比图。
-- 加上 `--animate` 参数可生成随时间变化的对比动图。
-
    ```bash
-   # 静态对比
-   uv run main.py visualize --data data/processed/npy_data/sim_f100000_i1.05.npy --mode compare --checkpoint outputs/models_weights/best_model.pth
+   # 静态对比 (指定时刻)
+   uv run main.py visualize --data data/processed/npy_data/sim_f100000_i1.15.npy --mode compare --checkpoint outputs/models_weights/best_model.pth --snapshot_time 5.0 --duration 10.0
 
    # 动态对比 (生成 GIF)
-   uv run main.py visualize --data data/processed/npy_data/sim_f100000_i1.05.npy --mode compare --checkpoint outputs/models_weights/best_model.pth --animate
+   uv run main.py visualize --data data/processed/npy_data/sim_f100000_i1.15.npy --mode compare --checkpoint outputs/models_weights/best_model.pth --animate
    ```
 
 ### 参数说明
@@ -260,9 +257,10 @@
 - `--output`: 输出目录 (默认: `outputs/figures`)。
 - `--fps`: GIF 帧率 (默认: 10)。
 - `--snapshot_time`: 截图的时间点 (秒)。
+- `--duration`: 仿真总时长 (秒)，用于计算时间索引 (默认: 10.0)。
 - `--checkpoint`: 模型权重路径 (仅 `compare` 模式需要)。
 - `--config`: 模型配置文件路径 (默认 `config/model_config.yaml`)。
-- `--animate`: 在 `compare` 模式下生成动态对比图 (可选)。
+- `--animate`: 在 `compare` 模式下生成动态对比图 (若开启则不生成静态图)。
 
 ### 输出结果
 

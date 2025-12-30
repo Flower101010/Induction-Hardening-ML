@@ -36,14 +36,6 @@ def load_and_process_data(filepath, mask_path=None):
     print(f"Loading data from {filepath}...")
     data = np.load(filepath)
 
-    # Swap Austenite (1) and Martensite (2)
-    # This seems to be a specific fix for the current dataset version
-    # print("Swapping Austenite (channel 1) and Martensite (channel 2)...")
-    # data_copy = data.copy()
-    # data[:, 1] = data_copy[:, 2]
-    # data[:, 2] = data_copy[:, 1]
-    # del data_copy
-
     # Flip data along Z-axis (axis 2) to fix orientation
     print("Flipping data along Z-axis (up/down)...")
     data = np.flip(data, axis=2).copy()
@@ -147,16 +139,6 @@ def run_inference(checkpoint_path, config_path, data_path, stats_path):
         pred_data = pred_tensor.detach().cpu().numpy()
         gt_data = gt_tensor.detach().cpu().numpy()
 
-        # Post-process predictions (Swap & Flip) to match visualization expectations
-        # Swap
-        pred_copy = pred_data.copy()
-        pred_data[:, 1] = pred_copy[:, 2]
-        pred_data[:, 2] = pred_copy[:, 1]
-
-        gt_copy = gt_data.copy()
-        gt_data[:, 1] = gt_copy[:, 2]
-        gt_data[:, 2] = gt_copy[:, 1]
-
         # Flip
         pred_data = np.flip(pred_data, axis=2).copy()
         gt_data = np.flip(gt_data, axis=2).copy()
@@ -207,6 +189,12 @@ def main():
     parser.add_argument(
         "--snapshot_time", type=float, default=1.0, help="Time in seconds for snapshot"
     )
+    parser.add_argument(
+        "--duration",
+        type=float,
+        default=10.0,
+        help="Total duration of simulation in seconds",
+    )
 
     # Model args for comparison
     parser.add_argument(
@@ -235,7 +223,7 @@ def main():
     # Apply mask to data for visualization
     data_masked = viz._apply_mask(data)
 
-    # Determine time index
+    # Determine time indexargs.duration
     T = data.shape[0]
     if args.time_idx == -1:
         time_idx = int(args.snapshot_time / 10.0 * (T - 1))
@@ -287,9 +275,10 @@ def main():
             gt = viz._apply_mask(gt)
             pred = viz._apply_mask(pred)
 
-            viz.plot_comparison(
-                gt, pred, time_idx, f"{filename_base}_compare_t{time_idx}"
-            )
+            if not args.animate:
+                viz.plot_comparison(
+                    gt, pred, time_idx, f"{filename_base}_compare_t{time_idx}"
+                )
 
             if args.animate:
                 print("\n=== Generating Comparison Animation ===")

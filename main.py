@@ -91,6 +91,9 @@ def main():
         "--snapshot_time", type=float, default=5.0, help="Snapshot time"
     )
     viz_parser.add_argument(
+        "--duration", type=float, default=10.0, help="Total duration of simulation in seconds"
+    )
+    viz_parser.add_argument(
         "--animate", action="store_true", help="Generate comparison animation"
     )
 
@@ -165,6 +168,8 @@ def main():
             str(args.fps),
             "--snapshot_time",
             str(args.snapshot_time),
+            "--duration",
+            str(args.duration),
         ]
         if args.checkpoint:
             cmd.extend(["--checkpoint", args.checkpoint])
