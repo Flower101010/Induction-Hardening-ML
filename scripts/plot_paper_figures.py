@@ -425,7 +425,7 @@ def main():
         mask_path = os.path.join(args.data_dir, "geometry_mask.npy")
 
     preds, targets = get_test_predictions(
-        model, dataset, args.device, limit_batches=50, mask_path=mask_path
+        model, dataset, args.device, limit_batches=None, mask_path=mask_path
     )
 
     # 4. Plots (Updated)
