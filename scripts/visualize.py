@@ -38,11 +38,11 @@ def load_and_process_data(filepath, mask_path=None):
 
     # Swap Austenite (1) and Martensite (2)
     # This seems to be a specific fix for the current dataset version
-    print("Swapping Austenite (channel 1) and Martensite (channel 2)...")
-    data_copy = data.copy()
-    data[:, 1] = data_copy[:, 2]
-    data[:, 2] = data_copy[:, 1]
-    del data_copy
+    # print("Swapping Austenite (channel 1) and Martensite (channel 2)...")
+    # data_copy = data.copy()
+    # data[:, 1] = data_copy[:, 2]
+    # data[:, 2] = data_copy[:, 1]
+    # del data_copy
 
     # Flip data along Z-axis (axis 2) to fix orientation
     print("Flipping data along Z-axis (up/down)...")

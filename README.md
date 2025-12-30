@@ -163,7 +163,43 @@ Induction-Hardening-ML/
 
 ### 1. 准备数据
 
-由于数据文件较大，请从[课程网站上]下载 `dataset.zip`，解压后将文件放入 `data/raw/` 目录。
+由于数据文件较大，请从[网盘](https://pan.quark.cn/s/fb41d8e629da)下载 `dataset.zip`，解压后将文件放入 `data/raw/` 目录。
+
+**数据预处理流程**:
+
+请**依次**运行以下命令，将原始 COMSOL 导出数据转换为模型可用的 `.npy` 张量：
+
+1. **解析表头与生成映射**
+   生成列索引映射表。
+
+   ```bash
+   uv run scripts/analyze_structure.py
+   ```
+
+2. **生成标准 CSV 数据集**
+   根据映射表清洗原始数据，生成中间格式 CSV。
+
+   ```bash
+   uv run scripts/process_raw_data.py
+   ```
+
+3. **生成训练数据 (.npy)**
+   进行归一化、生成几何掩码，并保存为 PyTorch 标准格式。
+
+   ```bash
+   uv run src/data/preprocessor.py
+   ```
+
+   *输出目录: `data/processed/npy_data/`*
+
+4. **划分数据集**
+   将数据划分为训练集、验证集和测试集，生成配置文件。
+
+   ```bash
+   uv run scripts/split_data.py
+   ```
+
+   *输出文件: `config/data_split.json`*
 
 ### 2. 训练模型
 
@@ -179,31 +215,17 @@ uv run scripts/evaluate.py --config config/model_config.yaml --checkpoint output
 
 ### 4. 可视化分析
 
-训练完成后，可以使用以下脚本生成图表：
-
-**绘制 Loss 曲线**:
+训练完成后，可以使用脚本生成 Loss 曲线、论文插图或物理场动图。
 
 ```bash
+# 绘制 Loss 曲线
 uv run scripts/plot_loss.py --log outputs/logs/loss_history.json
-```
 
-**绘制论文用图**:
-
-```bash
+# 绘制论文专用图 (Profile Plot, Parity Plot)
 uv run scripts/plot_paper_figures.py
 ```
 
-**生成预测对比图 (静态)**:
-
-```bash
-uv run scripts/visualize.py --data data/processed/npy_data/sim_f100000_i1.00.npy --mode snapshot --snapshot_time 5.0
-```
-
-**生成预测动图 (GIF)**:
-
-```bash
-uv run scripts/visualize.py --data data/processed/npy_data/sim_f100000_i1.00.npy --mode gif
-```
+更多关于物理场动图生成与模型对比的可视化功能，请参阅下方的 **[🎨 可视化工具](#-可视化工具-visualization-tools)** 章节。
 
 ### 5. 启动 Jupyter Notebook (用于实验)
 

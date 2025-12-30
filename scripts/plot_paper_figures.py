@@ -170,59 +170,125 @@ def plot_parity(preds, targets, output_dir):
         )
 
 
-def find_hottest_sample(dataset):
-    """Loop through dataset to find the sample with maximum temperature."""
-    print("Searching for the hottest sample (highest max temp)...")
-    max_temp = -float("inf")
-    best_idx = 0
+def find_best_martensite_sample_at_9s(dataset):
+    """Find the sample with max Martensite at t=9.0s."""
+    print("Searching for sample with max Martensite at t=9.0s...")
 
-    # Check every 10th sample to speed up (or every 1 if dataset is small)
-    stride = 10 if len(dataset) > 1000 else 1
+    target_time = 9.0
+    total_time = 10.0
+    time_steps = dataset.time_steps
 
-    for i in range(0, len(dataset), stride):
-        _, y = dataset[i]
-        # Assuming channel 0 is temperature
-        curr_max = y[0].max().item()
-        if curr_max > max_temp:
-            max_temp = curr_max
-            best_idx = i
+    # Calculate index offset for the target time
+    # Assuming linear time from 0 to total_time
+    # If time_steps=101, t=0..100. 9s is index 90.
+    step_idx = int(target_time / total_time * (time_steps - 1))
 
-    print(f"Found max temp {max_temp:.2f} at index {best_idx}")
-    return best_idx
+    max_mart = -1.0
+    best_global_idx = 0
+
+    # Iterate over each simulation file
+    # Total samples = num_sims * time_steps
+    num_sims = len(dataset) // time_steps
+
+    for sim_i in range(num_sims):
+        # Global index for this simulation at target time
+        idx = sim_i * time_steps + step_idx
+
+        # Load sample
+        # dataset[idx] returns (x, y)
+        # y shape: [4, H, W] -> [Temp, Aust, Mart, Initial]
+        _, y = dataset[idx]
+
+        # Check Martensite (Channel 2)
+        curr_mart = y[2].max().item()
+
+        if curr_mart > max_mart:
+            max_mart = curr_mart
+            best_global_idx = idx
+
+    print(
+        f"Found max Martensite {max_mart:.4f} at index {best_global_idx} (Sim {best_global_idx // time_steps}, Step {step_idx})"
+    )
+    return best_global_idx
 
 
 def plot_profile(model, dataset, output_dir, device="cuda"):
-    """Generate Profile Plot for the HOTTEST sample."""
+    """Generate Profile Plot: Max Temp (at peak time) and Martensite (at 9s)."""
     print("Generating Profile Plot...")
 
-    # [CHANGE] Use the hottest sample instead of a random one
-    idx = find_hottest_sample(dataset)
-    x, y = dataset[idx]
+    # 1. Select the simulation case based on Martensite at 9s
+    idx_9s = find_best_martensite_sample_at_9s(dataset)
 
-    x = x.unsqueeze(0).to(device)
-    y = y.unsqueeze(0).to(device)
+    # Calculate file index and time steps
+    time_steps = dataset.time_steps
+    file_idx = idx_9s // time_steps
+
+    # 2. Find the time step with Peak Temperature for this specific simulation
+    print(f"Scanning simulation {file_idx} for peak temperature...")
+    max_temp_val = -1.0
+    idx_peak_temp = idx_9s  # default
+
+    # We need to scan all time steps for this file
+    start_idx = file_idx * time_steps
+    end_idx = start_idx + time_steps
+
+    for i in range(start_idx, end_idx):
+        _, y = dataset[i]  # y shape [4, H, W] -> Temp is channel 0
+        curr_temp = y[0].max().item()
+        if curr_temp > max_temp_val:
+            max_temp_val = curr_temp
+            idx_peak_temp = i
+
+    print(
+        f"Found Peak Temp at index {idx_peak_temp} (Time step {idx_peak_temp % time_steps})"
+    )
+
+    # 3. Get Data for both instants
+    # Sample A: Peak Temp
+    x_temp, y_temp = dataset[idx_peak_temp]
+    x_temp = x_temp.unsqueeze(0).to(device)
+    y_temp = y_temp.unsqueeze(0).to(device)
+
+    # Sample B: 9s Martensite
+    x_mart, y_mart = dataset[idx_9s]
+    x_mart = x_mart.unsqueeze(0).to(device)
+    y_mart = y_mart.unsqueeze(0).to(device)
 
     with torch.no_grad():
-        out = model(x)
-        temp_pred = out[:, 0:1]
-        phase_logits = out[:, 1:]
-        phase_prob = torch.softmax(phase_logits, dim=1)
-        phase_prob = torch.clamp(phase_prob, 0.0, 1.0)
-        pred = torch.cat([temp_pred, phase_prob], dim=1)
+        # Inference for Peak Temp
+        out_temp = model(x_temp)
+        temp_pred = out_temp[:, 0:1]
 
-    pred = pred.squeeze(0).cpu().numpy()
-    target = y.squeeze(0).cpu().numpy()
+        # Inference for 9s Martensite
+        out_mart = model(x_mart)
+        phase_logits = out_mart[:, 1:]
+        phase_prob = torch.softmax(phase_logits, dim=1)
+        # Martensite is the 2nd class in softmax (index 1)
+        mart_pred = phase_prob[:, 1:2]
+
+    # Prepare for plotting
+    # Temp Data (from Peak Time)
+    temp_pred_np = temp_pred.squeeze(0).cpu().numpy()  # [1, H, W]
+    temp_true_np = y_temp.squeeze(0).cpu().numpy()  # [4, H, W]
+
+    # Martensite Data (from 9s)
+    mart_pred_np = mart_pred.squeeze(0).cpu().numpy()  # [1, H, W]
+    mart_true_np = y_mart.squeeze(0).cpu().numpy()  # [4, H, W]
 
     # Pick middle Z
-    z_idx = pred.shape[1] // 2
-    r_axis = np.linspace(0, MAX_RADIUS_MM, pred.shape[2])
+    z_idx = temp_pred_np.shape[1] // 2
+    r_axis = np.linspace(0, MAX_RADIUS_MM, temp_pred_np.shape[2])
 
-    temp_pred_profile = pred[0, z_idx, :]
-    temp_true_profile = target[0, z_idx, :]
-    mart_pred_profile = pred[2, z_idx, :]
-    mart_true_profile = target[2, z_idx, :]
+    # Extract profiles
+    # Temp (Channel 0)
+    temp_pred_profile = temp_pred_np[0, z_idx, :]
+    temp_true_profile = temp_true_np[0, z_idx, :]
 
-    # Denormalize logic (if applicable)
+    # Martensite (Channel 2 in Ground Truth, Channel 0 in our extracted mart_pred_np)
+    mart_pred_profile = mart_pred_np[0, z_idx, :]
+    mart_true_profile = mart_true_np[2, z_idx, :]
+
+    # Denormalize Temp
     if dataset.stats:
         t_min = dataset.stats["temp_min"]
         t_max = dataset.stats["temp_max"]
@@ -233,8 +299,7 @@ def plot_profile(model, dataset, output_dir, device="cuda"):
 
     color = "tab:red"
     ax1.set_xlabel("Radius (mm)")
-    # [CHANGE] Unit corrected to C
-    ax1.set_ylabel("Temperature (°C)", color=color)
+    ax1.set_ylabel("Temperature (°C) @ Peak", color=color)
     ax1.plot(
         r_axis, temp_true_profile, color=color, ls="-", lw=2, label="Temp (COMSOL)"
     )
@@ -243,7 +308,7 @@ def plot_profile(model, dataset, output_dir, device="cuda"):
 
     ax2 = ax1.twinx()
     color = "tab:blue"
-    ax2.set_ylabel("Martensite Fraction", color=color)
+    ax2.set_ylabel("Martensite Fraction @ 9s", color=color)
     ax2.plot(
         r_axis,
         mart_true_profile,
@@ -263,10 +328,12 @@ def plot_profile(model, dataset, output_dir, device="cuda"):
     lines_2, labels_2 = ax2.get_legend_handles_labels()
     ax1.legend(lines_1 + lines_2, labels_1 + labels_2, loc="center left")
 
-    plt.title(f"Profile Plot at z={z_idx} (Sample {idx} - Peak Heating)")
+    plt.title(
+        f"Profile Plot: Peak Temp (t={idx_peak_temp % time_steps}) & Final Martensite (t=9.0s)"
+    )
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, "profile_plot_hottest.png"), dpi=300)
+    plt.savefig(os.path.join(output_dir, "profile_plot_combined.png"), dpi=300)
     plt.close()
 
 
