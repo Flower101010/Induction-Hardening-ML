@@ -55,9 +55,9 @@ def parse_specific_comsol_header(file_path):
             if "T" in var_raw:
                 var_name = "Temperature"
             elif "phase1" in var_raw:
-                var_name = "Martensite"  # 假设
+                var_name = "Austenite"
             elif "phase5" in var_raw:
-                var_name = "Austenite"  # 假设
+                var_name = "Martensite"
             else:
                 var_name = var_raw
 
@@ -102,7 +102,7 @@ def parse_specific_comsol_header(file_path):
 
 
 # ============================
-file_path = "data/raw/training_data.csv"  # 请确保路径正确
+file_path = "data/raw/dataset.csv"  # 请确保路径正确
 # ============================
 
 if __name__ == "__main__":
