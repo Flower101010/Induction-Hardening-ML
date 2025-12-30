@@ -169,45 +169,34 @@
 
    请**依次**运行以下命令，将原始 COMSOL 导出数据转换为模型可用的 `.npy` 张量：
 
-   1. **解析表头与生成映射**
-      生成列索引映射表。
+   1. **一键运行所有数据准备步骤**
+      包含解析表头、生成 CSV、生成 .npy 和划分数据集。
 
       ```bash
-      uv run scripts/analyze_structure.py
+      uv run main.py prepare-data
       ```
 
-   2. **生成标准 CSV 数据集**
-      根据映射表清洗原始数据，生成中间格式 CSV。
+      *或者分步运行:*
 
       ```bash
-      uv run scripts/process_raw_data.py
-      ```
-
-   3. **生成训练数据 (.npy)**
-      进行归一化、生成几何掩码，并保存为 PyTorch 标准格式。
-
-      ```bash
-      uv run src/data/preprocessor.py
+      uv run main.py prepare-data --step analyze    # 解析表头
+      uv run main.py prepare-data --step process    # 生成 CSV
+      uv run main.py prepare-data --step preprocess # 生成 .npy
+      uv run main.py prepare-data --step split      # 划分数据集
       ```
 
       *输出目录: `data/processed/npy_data/`*
 
-   *数据集划分*: 仓库已提供固定划分文件 `config/data_split.json`，直接使用即可。或者运行以下脚本自定义划分：
-
-   ```bash
-   uv run scripts/split_data.py
-   ```
-
 ### 2. 训练模型
 
    ```bash
-   uv run scripts/train.py --config config/model_config.yaml
+   uv run main.py train --config config/model_config.yaml
    ```
 
 ### 3. 预测与评估
 
    ```bash
-   uv run scripts/evaluate.py --config config/model_config.yaml --checkpoint outputs/models_weights/best_model.pth
+   uv run main.py evaluate --config config/model_config.yaml --checkpoint outputs/models_weights/best_model.pth
    ```
 
 ### 4. 可视化分析
@@ -216,10 +205,10 @@
 
    ```bash
    # 绘制 Loss 曲线
-   uv run scripts/plot_loss.py --log outputs/logs/loss_history.json
+   uv run main.py plot-loss --log outputs/logs/loss_history.json
 
    # 绘制论文专用图 (Profile Plot, Parity Plot)
-   uv run scripts/plot_paper_figures.py
+   uv run main.py plot-paper --checkpoint outputs/models_weights/best_model.pth
    ```
 
    更多关于物理场动图生成与模型对比的可视化功能，请参阅下方的 **[🎨 可视化工具](#-可视化工具-visualization-tools)** 章节。
@@ -240,14 +229,14 @@
    生成温度、奥氏体、马氏体随时间变化的动图。
 
    ```bash
-   uv run scripts/visualize.py --data data/processed/npy_data/sim_f100000_i1.05.npy --mode gif
+   uv run main.py visualize --data data/processed/npy_data/sim_f100000_i1.05.npy --mode gif
    ```
 
    **2. 生成特定时刻截图 (Snapshot)**
    生成指定时间点（如 5.0秒）的物理场分布图。
 
    ```bash
-   uv run scripts/visualize.py --data data/processed/npy_data/sim_f100000_i1.05.npy --mode snapshot --snapshot_time 5.0
+   uv run main.py visualize --data data/processed/npy_data/sim_f100000_i1.05.npy --mode snapshot --snapshot_time 5.0
    ```
 
    **3. 模型预测对比 (Compare)**
@@ -258,10 +247,10 @@
 
    ```bash
    # 静态对比
-   uv run scripts/visualize.py --data data/processed/npy_data/sim_f100000_i1.05.npy --mode compare --checkpoint outputs/models_weights/best_model.pth
+   uv run main.py visualize --data data/processed/npy_data/sim_f100000_i1.05.npy --mode compare --checkpoint outputs/models_weights/best_model.pth
 
    # 动态对比 (生成 GIF)
-   uv run scripts/visualize.py --data data/processed/npy_data/sim_f100000_i1.05.npy --mode compare --checkpoint outputs/models_weights/best_model.pth --animate
+   uv run main.py visualize --data data/processed/npy_data/sim_f100000_i1.05.npy --mode compare --checkpoint outputs/models_weights/best_model.pth --animate
    ```
 
 ### 参数说明

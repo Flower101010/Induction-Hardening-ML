@@ -116,12 +116,6 @@ class CombinedLoss(nn.Module):
         # 5. Physics Loss (Sum of phases = 1)
         # Implicitly satisfied by Softmax, so we can skip or add penalty if we didn't use Softmax
         # Since we use Softmax, sum is always 1.
-
-        return self.alpha * loss_main + self.beta * loss_sobel
-
-        # 5. 物理损失（相之和 = 1）
-        # Implicitly satisfied by Softmax interpretation for probabilities.
-        # 通过 Softmax 解释概率隐式满足。
         loss_physics = 0.0
 
         return (
