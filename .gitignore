@@ -221,6 +221,7 @@ datasets/
 *.xlsx
 *.xls
 *.json
+!config/data_split.json
 *.xml
 *.npy
 # If there are specific raw data formats, such as .dat or .mat, add them too
