@@ -71,6 +71,28 @@ instance/
 # Sphinx documentation
 docs/_build/
 
+# LaTeX
+*.aux
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
+*.dpth
+*.md5
+*.auxlock
+*.log
+*.out
+*.toc
+*.lof
+*.lot
+*.dvi
+*.ps
+*.synctex.gz
+*.sagetex.py
+.latexmk
+*_latexmk.fls
+*_latexmk.fdb_latexmk
+
 # PyBuilder
 .pybuilder/
 target/
