@@ -5,6 +5,19 @@
 \usepackage{geometry} % 页面设置
 \usepackage{hyperref} % 超链接
 \usepackage{subcaption} % 支持子图
+\usepackage{listings}
+\usepackage{xcolor}
+\lstset{
+    language=Python,
+    basicstyle=\ttfamily\footnotesize,
+    keywordstyle=\color{blue},
+    stringstyle=\color{red},
+    commentstyle=\color{green!50!black},
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny\color{gray}
+}
 \geometry{left=2.5cm,right=2.5cm,top=2.5cm,bottom=2.5cm}
 
 \title{轴类感应淬火机器学习项目报告}
@@ -230,9 +243,9 @@
 
 \begin{figure}[htbp]
     \centering
-    % \includegraphics[width=0.9\textwidth]{figure/parallel_u_fno_arch.png} % 待绘制
-    \fbox{\parbox[c][5cm]{0.9\textwidth}{\centering Parallel U-FNO 整体架构图 (待绘制)}}
-    \caption{Parallel U-FNO 整体架构图：展示了 FNO 分支与 U-Net 分支的并行结构以及最终的融合模块。}
+    \includegraphics[width=0.9\textwidth]{figure/parallel_u_fno_arch.pdf}
+    % \fbox{\parbox[c][5cm]{0.9\textwidth}{\centering Parallel U-FNO 整体架构图 (待绘制)}}
+    \caption{Parallel U-FNO 整体架构图}
     \label{fig:arch_overview}
 \end{figure}
 
@@ -241,7 +254,7 @@
 \subsubsection{FNO 分支}
 FNO 分支利用快速傅里叶变换（FFT）在频域中进行卷积操作。由于热传导方程本质上是积分算子，FNO 能够高效地学习这种全局积分映射。
 \begin{itemize}
-    \item \textbf{输入}：物理场 $x$。
+    \item \textbf{输入}：时空坐标与工艺参数张量 $x = (f, I, t, z, r)$。模型学习的是从坐标到物理场的直接映射 $G: (f, I, t, z, r) \to (T, \text{Phases})$。
     \item \textbf{核心操作}：将输入映射到高维空间，进行 $N$ 层 Spectral Convolution（频谱卷积），最后投影回目标维度。
     \item \textbf{代码实现}：调用 \texttt{neuralop.models.FNO}，配置模式数 \texttt{n\_modes=(16, 16)}，确保保留主要的低频能量。
 \end{itemize}
@@ -272,8 +285,8 @@ FNO 分支利用快速傅里叶变换（FFT）在频域中进行卷积操作。�
 
     \begin{figure}[htbp]
         \centering
-        % \includegraphics[width=0.7\textwidth]{figure/fusion_module.png} % 待绘制
-        \fbox{\parbox[c][5cm]{0.7\textwidth}{\centering 融合模块细节图 (待绘制)}}
+        \includegraphics[width=0.6\textwidth]{figure/fusion_module.pdf}
+        % \fbox{\parbox[c][5cm]{0.7\textwidth}{\centering 融合模块细节图 (待绘制)}}
         \caption{融合模块细节图：展示了特征拼接、非线性融合以及双头分叉的详细流程。}
         \label{fig:fusion_detail}
     \end{figure}
@@ -287,6 +300,34 @@ FNO 分支利用快速傅里叶变换（FFT）在频域中进行卷积操作。�
     最终输出为两者在通道维度的拼接：$Output = [T, P]$。
 \end{enumerate}
 
+\textbf{代码实现关键片段}：
+\begin{lstlisting}
+class ParallelUFNO(nn.Module):
+    def __init__(self, ...):
+        # ... (init code)
+        # Fusion Layer: Mixes frequency (FNO) and spatial (U-Net) features
+        self.fusion_shared = nn.Sequential(
+            nn.Conv2d(out_channels * 2, hidden_channels, kernel_size=1),
+            nn.GELU(),
+            nn.BatchNorm2d(hidden_channels),
+        )
+
+    def forward(self, x):
+        # Parallel Execution
+        out_fno = self.fno(x)    # Global features
+        out_unet = self.unet(x)  # Local features
+
+        # Fusion
+        out_cat = torch.cat([out_fno, out_unet], dim=1)
+        features = self.fusion_shared(out_cat)
+
+        # Dual Heads
+        out_temp = self.head_temp(features)
+        out_phase = self.head_phase(features) # Outputs Logits
+
+        return torch.cat([out_temp, out_phase], dim=1)
+\end{lstlisting}
+
 \subsection{损失函数设计}
 为了精准捕捉感应淬火过程中的温度场演变与微观组织相变，本项目设计了一种复合损失函数 $L_{total}$。该函数主要由数值精度损失和边界梯度损失两部分组成。
 
@@ -295,6 +336,28 @@ FNO 分支利用快速傅里叶变换（FFT）在频域中进行卷积操作。�
     L_{total} = \alpha \cdot L_{MSE} + \beta \cdot L_{Sobel}
 \end{equation}
 其中，$\alpha$ 和 $\beta$ 为超参数权重，分别控制数值精度和边界清晰度的重要性。
+
+\textbf{损失函数代码实现}：
+\begin{lstlisting}
+class CombinedLoss(nn.Module):
+    def forward(self, pred, target, mask=None):
+        # Split predictions
+        pred_temp = pred[:, 0:1, :, :]
+        pred_phases_logits = pred[:, 1:, :, :]
+
+        # Apply Softmax for physical constraint (Sum=1)
+        pred_phases_prob = F.softmax(pred_phases_logits, dim=1)
+
+        # 1. MSE Loss
+        loss_temp = self.mse(pred_temp, target[:, 0:1])
+        loss_phase = self.mse(pred_phases_prob, target[:, 1:])
+
+        # 2. Sobel Gradient Loss (Edge Sharpness)
+        loss_sobel = self.sobel(pred_temp, target[:, 0:1], mask) + \
+                     self.sobel(pred_phases_prob, target[:, 1:], mask)
+
+        return self.alpha * (loss_temp + loss_phase) + self.beta * loss_sobel
+\end{lstlisting}
 
 \subsubsection{基础数值损失}
 这是模型优化的基础，用于确保预测值在数值上逼近真实值。
@@ -313,8 +376,8 @@ FNO 分支利用快速傅里叶变换（FFT）在频域中进行卷积操作。�
 \subsubsection{物理约束的实现}
 值得特别说明的是，关于相变组织演变的物理守恒律（即各相分数之和为 1：$\sum P_i = 1$），本项目采用了硬约束而非软约束的方式：
 \begin{itemize}
-    \item \textbf{架构级保证}：我们在模型的相变输出头末端直接使用了 Softmax 激活函数。
-    \item \textbf{优势}：这从数学结构上天然保证了输出的相变概率分布归一化，无需在损失函数中添加额外的物理惩罚项（如 $\gamma \cdot |1 - \sum P|$），从而简化了优化目标，提高了训练稳定性。
+    \item \textbf{架构级保证}：模型输出层输出未归一化的 Logits，在计算损失函数及推理时应用 Softmax 激活函数。
+    \item \textbf{优势}：这从数学结构上天然保证了最终输出的相变概率分布归一化（$\sum P_i = 1$），无需在损失函数中添加额外的物理惩罚项（如 $\gamma \cdot |1 - \sum P|$），从而简化了优化目标，提高了训练稳定性。
 \end{itemize}
 
 \subsubsection{几何掩码机制}
@@ -398,7 +461,7 @@ FNO 分支利用快速傅里叶变换（FFT）在频域中进行卷积操作。�
         \hline
         温度场  & $2.46 \times 10^{-5}$ & $0.0034$ \\
         相变场  & $4.15 \times 10^{-5}$ & $0.0029$ \\
-        整体  & $\mathbf{3.73 \times 10^{-5}}$ & $\mathbf{0.0030}$ \\
+        整体  & $3.73 \times 10^{-5}$ & $0.0030$ \\
         \hline
     \end{tabular}
 \end{table}
@@ -448,7 +511,7 @@ FNO 分支利用快速傅里叶变换（FFT）在频域中进行卷积操作。�
     \label{fig:profile_plot}
 \end{figure}
 
-\section{不足}
+\subsection{不足}
 
 尽管 Parallel U-FNO 模型在测试集上表现出了优异的预测性能，但本研究仍存在以下局限性，需要在未来的工作中进一步解决：
 
