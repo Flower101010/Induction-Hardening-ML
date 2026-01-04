@@ -115,18 +115,26 @@ def evaluate(model, loader, device, mask=None, time_steps=100, num_files=0):
             batch_size = x.shape[0]
             x, y = x.to(device), y.to(device)
 
-            out = model(x)
+            # 1. 模型输出 Logits
+            logits = model(x)
 
-            # --- 修复变量名 ---
-            temp_pred = out[:, 0:1]
-            phase_pred = out[:, 1:].clamp(0.0, 1.0) # 这里改名
-            pred_full = torch.cat([temp_pred, phase_pred], dim=1) # 这里引用正确
+            # 2. 拆分通道并手动处理 Softmax
+            # Channel 0: Temperature (Regression)
+            temp_pred = logits[:, 0:1]
+            
+            # Channel 1-3: Phase (Probabilities)
+            # ⚠️ 这里手动加 Softmax
+            phase_logits = logits[:, 1:]
+            phase_pred = torch.softmax(phase_logits, dim=1)
+            
+            # 3. 拼接
+            pred_full = torch.cat([temp_pred, phase_pred], dim=1)
 
-            # 1. 计算整体指标
+            # 4. 计算指标
             batch_stats = compute_stats(pred_full, y, mask)
             merge_stats(totals, batch_stats)
 
-            # 2. 如果需要追踪最好的文件
+            # 5. 文件级误差追踪
             if track_files:
                 diff_sq = (pred_full - y) ** 2
                 target_sq = y**2
@@ -199,7 +207,7 @@ def main():
         pin_memory=(device.type == 'cuda'),
     )
 
-    # 加载几何 Mask
+    # 加载 Mask
     mask = None
     mask_path = os.path.join(args.data_dir, "geometry_mask.npy")
     if os.path.exists(mask_path):
@@ -225,8 +233,8 @@ def main():
         try:
             model.load_state_dict(state)
         except RuntimeError as e:
-            print(f"❌ Error loading keys: {e}")
-            return
+            print(f"❌ Error loading keys (trying loose match): {e}")
+            model.load_state_dict(state, strict=False)
     else:
         print(f"❌ Checkpoint file not found: {args.checkpoint}")
         return

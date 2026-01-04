@@ -1,73 +1,83 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class SobelFilter(nn.Module):
+class LpLoss(object):
     """
-    用于计算图像梯度的 Sobel 滤波器 (物理约束用)
+    Relative L2 Loss (用于评估或作为损失的一部分)
     """
-    def __init__(self):
-        super().__init__()
-        # 定义 X 方向和 Y 方向的 Sobel 核
-        sobel_x = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=torch.float32).view(1, 1, 3, 3)
-        sobel_y = torch.tensor([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=torch.float32).view(1, 1, 3, 3)
-        
-        self.register_buffer('sobel_x', sobel_x)
-        self.register_buffer('sobel_y', sobel_y)
+    def __init__(self, d=2, p=2, size_average=True, reduction=True):
+        super(LpLoss, self).__init__()
+        self.d = d
+        self.p = p
+        self.reduction = reduction
+        self.size_average = size_average
 
-    def forward(self, x):
-        # x shape: [B, C, H, W]
-        b, c, h, w = x.shape
-        # 对每个通道单独计算梯度
-        grad_x = F.conv2d(x.reshape(b * c, 1, h, w), self.sobel_x, padding=1).view(b, c, h, w)
-        grad_y = F.conv2d(x.reshape(b * c, 1, h, w), self.sobel_y, padding=1).view(b, c, h, w)
-        return grad_x, grad_y
+    def rel(self, x, y):
+        num_examples = x.size()[0]
+        diff_norms = torch.norm(x.reshape(num_examples,-1) - y.reshape(num_examples,-1), self.p, 1)
+        y_norms = torch.norm(y.reshape(num_examples,-1), self.p, 1)
+        if self.reduction:
+            if self.size_average:
+                return torch.mean(diff_norms/y_norms)
+            else:
+                return torch.sum(diff_norms/y_norms)
+        return diff_norms/y_norms
+
+    def __call__(self, x, y):
+        return self.rel(x, y)
 
 class CombinedLoss(nn.Module):
     """
-    组合损失函数：
-    Loss = alpha * MSE + beta * Sobel_MSE + gamma * Physics
+    综合损失函数：温度 MSE + 相变 MSE (带 Softmax)
+    [修复]: 增加了 Mask 维度的自动适配逻辑
     """
-    def __init__(self, alpha=1.0, beta=1.0, gamma=0.0, mask=None):
+    def __init__(self, alpha=1.0, beta=1.0):
         super().__init__()
-        self.alpha = alpha
-        self.beta = beta
-        self.gamma = gamma
-        self.sobel = SobelFilter()
+        self.mse = nn.MSELoss()
+        self.alpha = alpha # 温度权重
+        self.beta = beta   # 相变权重
+
+    def forward(self, pred, target, mask=None):
+        """
+        Args:
+            pred: [Batch, 4, H, W] (Logits)
+            target: [Batch, 4, H, W] (Ground Truth)
+            mask: [H, W] or [Batch, H, W]
+        """
         
-        # 注册 mask 为 buffer，这样它会自动随模型移动到 GPU，但不会被更新
+        # 1. 拆分通道
+        # Channel 0: 温度 (Temperature) -> 直接回归
+        temp_pred = pred[:, 0:1]
+        temp_target = target[:, 0:1]
+
+        # Channel 1-3: 相变 (Phase) -> Logits 转概率
+        phase_logits = pred[:, 1:]
+        phase_probs = torch.softmax(phase_logits, dim=1) # Logits -> Probs
+        phase_target = target[:, 1:]
+
+        # 2. 应用几何 Mask (自动处理维度)
         if mask is not None:
-            # 确保 mask 维度匹配 [1, 1, H, W] 以便广播
-            if mask.dim() == 2:
-                mask = mask.view(1, 1, mask.shape[0], mask.shape[1])
-            self.register_buffer('mask', mask)
-        else:
-            self.mask = None
+            # 如果 Mask 是 2D [H, W]，扩展为 [1, 1, H, W]
+            if mask.ndim == 2:
+                mask_broadcast = mask.unsqueeze(0).unsqueeze(0)
+            # 如果 Mask 是 3D [Batch, H, W]，扩展为 [Batch, 1, H, W]
+            elif mask.ndim == 3:
+                mask_broadcast = mask.unsqueeze(1)
+            else:
+                mask_broadcast = mask
 
-    def forward(self, pred, target):
-        # 1. 应用 Mask (如果有)
-        if self.mask is not None:
-            pred = pred * self.mask
-            target = target * self.mask
-
-        # 2. 基础 MSE Loss (Data Loss)
-        mse_loss = F.mse_loss(pred, target, reduction='mean')
-
-        # 3. 梯度 Loss (Sobel Loss) - 迫使模型学习物理边界变化
-        total_loss = self.alpha * mse_loss
-        
-        if self.beta > 0:
-            pred_dx, pred_dy = self.sobel(pred)
-            target_dx, target_dy = self.sobel(target)
+            # 利用广播机制，自动适配 Batch 和 Channels
+            temp_pred = temp_pred * mask_broadcast
+            temp_target = temp_target * mask_broadcast
             
-            # 如果有 mask，梯度也要 mask 掉
-            if self.mask is not None:
-                pred_dx = pred_dx * self.mask
-                pred_dy = pred_dy * self.mask
-                target_dx = target_dx * self.mask
-                target_dy = target_dy * self.mask
-                
-            grad_loss = F.mse_loss(pred_dx, target_dx) + F.mse_loss(pred_dy, target_dy)
-            total_loss += self.beta * grad_loss
+            phase_probs = phase_probs * mask_broadcast
+            phase_target = phase_target * mask_broadcast
 
+        # 3. 计算基础 MSE 损失
+        loss_temp = self.mse(temp_pred, temp_target)
+        loss_phase = self.mse(phase_probs, phase_target)
+
+        # 4. 总损失
+        total_loss = self.alpha * loss_temp + self.beta * loss_phase
+        
         return total_loss

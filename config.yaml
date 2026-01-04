@@ -35,3 +35,6 @@ training:
 
   # 开启 GPU
   device: "cuda"
+  # 👇 补全这两个参数 👇
+  scheduler_step_size: 10   # 每隔 10 个 epoch 调整一次学习率
+  scheduler_gamma: 0.5      # 每次调整将学习率乘以 0.5
