@@ -1,0 +1,37 @@
+# Model Configuration
+data:
+  num_workers: 0          # Windows 下必须设为 0
+  time_steps: 100         # 原始默认值
+
+model:
+  name: "ParallelUFNO"
+  n_modes: [16, 16]
+  hidden_channels: 32
+  n_layers: 4
+  encoder_name: "mobilenet_v2"
+  encoder_weights: null   # 设为 null 防止联网报错
+  in_channels: 4
+  out_channels: 4
+
+loss:
+  alpha: 5.0
+  beta: 2.0
+  gamma: 0.0
+
+training:
+  batch_size: 16          # 4060 显卡可以设 16 或 32
+  epochs: 50
+  learning_rate: 1.0e-3
+  weight_decay: 1.0e-4
+  scheduler:
+    step_size: 20
+    gamma: 0.5
+  early_stopping:
+    patience: 15
+    min_delta: 1.0e-5
+  
+  # 设为 null 以便从头开始训练，不加载旧权重
+  load_from_checkpoint: null
+
+  # 开启 GPU
+  device: "cuda"
