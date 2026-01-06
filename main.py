@@ -27,10 +27,10 @@ def run_command(command_args):
     try:
         # Use sys.executable to ensure we use the current python interpreter
         cmd = [sys.executable] + command_args
-        print(f"🚀 Running: {' '.join(cmd)}")
+        print(f"Running: {' '.join(cmd)}")
         subprocess.check_call(cmd)
     except subprocess.CalledProcessError as e:
-        print(f"❌ Command failed with exit code {e.returncode}")
+        print(f"Command failed with exit code {e.returncode}")
         sys.exit(e.returncode)
 
 
@@ -91,7 +91,10 @@ def main():
         "--snapshot_time", type=float, default=5.0, help="Snapshot time"
     )
     viz_parser.add_argument(
-        "--duration", type=float, default=10.0, help="Total duration of simulation in seconds"
+        "--duration",
+        type=float,
+        default=10.0,
+        help="Total duration of simulation in seconds",
     )
     viz_parser.add_argument(
         "--animate", action="store_true", help="Generate comparison animation"
@@ -115,6 +118,11 @@ def main():
     plot_paper_parser.add_argument(
         "--output_dir", default="outputs/figures/paper_v2", help="Output directory"
     )
+
+    # --- Utilities ---
+    subparsers.add_parser("plot-mask", help="Plot geometry mask")
+    subparsers.add_parser("plot-split", help="Inspect dataset split distribution")
+    subparsers.add_parser("demo", help="Run FNO demo")
 
     # Parse arguments
     args = parser.parse_args()
@@ -190,6 +198,15 @@ def main():
                 args.output_dir,
             ]
         )
+
+    elif args.command == "plot-mask":
+        run_command(["scripts/plot_geometry_mask.py"])
+
+    elif args.command == "plot-split":
+        run_command(["scripts/data_process_visualize.py"])
+
+    elif args.command == "demo":
+        run_command(["scripts/demo_fno_synth.py"])
 
 
 if __name__ == "__main__":

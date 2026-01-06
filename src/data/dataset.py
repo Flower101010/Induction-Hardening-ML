@@ -9,9 +9,6 @@ class InductionHardeningDataset(Dataset):
     """
     Dataset for Induction Hardening.
     Loads .npy files based on a split configuration file.
-
-    感应淬火数据集。
-    根据划分配置文件加载 .npy 文件。
     """
 
     def __init__(
@@ -43,7 +40,6 @@ class InductionHardeningDataset(Dataset):
         self.time_steps = time_steps
 
         # Load split config
-        # 加载划分配置
         if not os.path.exists(split_file):
             raise FileNotFoundError(f"Split file not found: {split_file}")
 
@@ -56,7 +52,6 @@ class InductionHardeningDataset(Dataset):
         self.file_list = splits[split]
 
         # Load normalization stats
-        # 加载归一化统计数据
         stats_path = os.path.join(self.data_dir, "normalization_stats.json")
         if os.path.exists(stats_path):
             with open(stats_path, "r") as f:
@@ -68,7 +63,6 @@ class InductionHardeningDataset(Dataset):
             self.stats = None
 
         # Pre-calculate grid (assuming fixed size 128x64)
-        # 预计算网格 (假设固定大小 128x64)
         self.H, self.W = 128, 64
         self.grid_z, self.grid_r = torch.meshgrid(
             torch.linspace(0, 1, self.H), torch.linspace(0, 1, self.W), indexing="ij"

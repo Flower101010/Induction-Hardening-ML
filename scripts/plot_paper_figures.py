@@ -143,7 +143,6 @@ def plot_parity(preds, targets, output_dir):
     """Generate Separate Parity Plots for Temp and Phase."""
     print("Generating Parity Plots...")
 
-    # 假设 Channel 0 是温度
     temp_preds = preds[:, 0, :, :].flatten()
     temp_targets = targets[:, 0, :, :].flatten()
     plot_parity_single(
@@ -155,8 +154,6 @@ def plot_parity(preds, targets, output_dir):
         output_dir,
     )
 
-    # 假设 Channel 2 是马氏体 (根据之前的 Profile 代码逻辑)
-    # 注意：如果你的模型输出通道不同，请在这里修改索引
     if preds.shape[1] > 2:
         mart_preds = preds[:, 2, :, :].flatten()
         mart_targets = targets[:, 2, :, :].flatten()

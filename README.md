@@ -1,287 +1,88 @@
 # Induction-Hardening-ML
-   >
-   > 机器学习在轴类结构感应淬火过程预测中的应用
 
-## 📅 关键时间节点
+An open-source pipeline for modeling induction hardening of shaft-like components using Fourier Neural Operators (FNO) and a Parallel U-FNO architecture. The repository includes data preparation, training, evaluation, and visualization utilities.
 
-- **2026-01-07**: ⚠️ **最终截点** (纸质版随堂交，电子版 24:00 前发送)
-- **2026-01-05**: 必须完成所有代码测试，开始汇总 PPT 和 Word。
-- **2025-12-15**: 完成模型初步跑通。
+## Overview
 
-## 📖 项目简介
+- Predict temperature and phase evolution fields for induction hardening using neural operators.
+- Includes data preprocessing from COMSOL exports, masking, normalization, and dataset splits.
+- Provides training scripts, evaluation utilities, and publication-ready plotting helpers.
 
-   本项目为《机器学习基础理论及其在工程科学中的应用》课程大作业。
+## Key Features
 
-   **选题方向：** [轴类结构感应淬火预测]
+- Parallel U-FNO model that fuses global (FNO) and local (U-Net style) features.
+- Sobel gradient loss to preserve sharp phase boundaries.
+- Reusable CLI entrypoint [main.py](main.py) that orchestrates data prep, training, evaluation, and visualization.
+- Helper scripts for dataset inspection, dummy data generation, and geometry mask plotting.
 
-   **主要目标：**
+## Setup
 
-   1. 针对 轴类结构感应淬火 进行数据分析与处理。
-   2. 构建 **Parallel U-FNO (双流架构)** 模型，融合全局与局部特征。
-   3. 实现对 [应力/温度场/相变场] 的精确预测，特别是**相变边界**的锐度保持。
+1. Install [uv](https://github.com/astral-sh/uv) for dependency management.
+2. Clone the repository and sync the environment:
 
-## ✨ 技术亮点
+```bash
+git clone https://github.com/Flower101010/Induction-Hardening-ML.git
+cd Induction-Hardening-ML
+uv sync
+```
 
-- **架构融合 (Parallel U-FNO)**:
-- **FNO 流**: 捕捉全局特征（如整体温度分布）。
-- **U-Net 流**: 捕捉局部特征（如相变层的尖锐边界）。
-- 两者并行处理，最后融合输出，兼顾宏观趋势与微观细节。
+## Data
 
-- **损失函数创新 (Sobel Gradient Loss)**:
-- 传统的 MSE Loss 容易导致相变边界模糊。
-- 引入 **Sobel 算子** 计算预测场与真实场的梯度差异。
-- 总 Loss = MSE + $\lambda$ * Gradient_Loss，显著提升边界清晰度。
+- Raw data: place the provided `dataset.csv` under `data/raw/`.
+- Preprocessed outputs (.npy tensors, masks, stats) are written to `data/processed/npy_data/`.
+- Geometry mask: generated as `geometry_mask.npy` during preprocessing.
 
-## 📚 模型文档
+## CLI Usage
 
-   如果你想了解核心算法 FNO 的原理、数据维度定义以及常见问题，请阅读：
-   👉 **[FNO 模型使用指南 & 原理说明](docs/model_guide.md)**
+The unified entrypoint is [main.py](main.py). Common commands:
 
-## 📊 数据结构说明
+```bash
+# Run full data preparation pipeline
+uv run main.py prepare-data
 
-   本项目的数据经过预处理后，统一保存为 `.npy` 格式，张量形状遵循 **PyTorch 标准 (Channel First)**：
-
-- **张量形状**: `(Batch_Size, Channels, Height, Width)`
-- **通道定义 (⚠️ 严禁混淆)**:
-  - `Channel 0`: **温度** (Temperature, 归一化)
-  - `Channel 1`: **奥氏体** (Austenite)
-  - `Channel 2`: **马氏体** (Martensite)
-  - `Channel 3`: **初始相** (Initial Phase)
-
-   训练过程中，模型会读取这些 `.npy` 文件，并结合 `geometry_mask.npy` (几何掩码) 进行物理场预测。
-
-## 🚀 环境配置 (极速版)
-
-   本项目使用 **[uv](https://github.com/astral-sh/uv)** 进行依赖管理，确保所有成员环境完全一致。请务必按照以下步骤操作，**不要使用传统的 pip install**。
-
-### 1. 安装 uv
-
-- **WSL / macOS / Linux**:
-
-   ```bash
-   curl -lsSf https://astral.sh/uv/install.sh | sh
-   ```
-
-      其他安装方式请参考其[官方文档](https://docs.astral.sh/uv/getting-started/installation/)
+# Run a specific data step (analyze | process | preprocess | split)
+uv run main.py prepare-data --step preprocess
 
-### 2. 克隆项目 & 同步环境
+# Train
+uv run main.py train --config config/model_config.yaml
 
-   ```bash
-   # 1. 克隆代码并进入项目目录
-   git clone https://github.com/Flower101010/Induction-Hardening-ML.git
-   cd Induction-Hardening-ML
+# Evaluate
+uv run main.py evaluate --config config/model_config.yaml --checkpoint outputs/models_weights/best_model.pth
 
-   # 2. 一键安装所有依赖 (Python + 库)
-   # uv 会根据 uv.lock 自动构建虚拟环境，无需手动配置
-   uv sync
-   ```
+# Visualize fields or comparisons
+uv run main.py visualize --data data/processed/npy_data/sim_f100000_i1.15.npy --mode gif
 
-### 3. 验证环境
+# Plot training curves
+uv run main.py plot-loss --log outputs/logs/loss_history.json --out outputs/figures/paper_v2
 
-   ```bash
-   # 运行测试命令 (运行最小化示例)
-   uv run scripts/demo_fno_synth.py
-   ```
+# Generate paper figures
+uv run main.py plot-paper --checkpoint outputs/models_weights/best_model.pth --output_dir outputs/figures/paper_v2
 
-   ---
+# Plot geometry mask
+uv run main.py plot-mask
 
-## 📂 项目结构
+# Inspect dataset split distribution
+uv run main.py plot-split
 
-   ```text
-   Induction-Hardening-ML/
-   ├── config/                 # 存放 yaml 配置文件 (模型参数、训练参数)
-   ├── data/
-   │   ├── raw/                # 原始数据 (老师发的)
-   │   └── processed/          # 预处理后的数据 (.npy)
-   ├── docs/                   # 文档 (模型说明、参考文献)
-   ├── notebooks/              # 实验用的 Jupyter Notebooks (草稿本)
-   ├── scripts/                # 可执行脚本
-   │   ├── train.py            # 训练脚本
-   │   ├── evaluate.py         # 评估脚本
-   │   ├── visualize.py        # 可视化脚本
-   │   ├── process_raw_data.py # 原始数据处理脚本
-   │   └── dummy_data_*.py     # 虚拟数据生成器
-   ├── src/                    # 核心源代码
-   │   ├── data/               # 数据加载 (Dataset) 与处理
-   │   ├── engine/             # 训练循环逻辑 (Trainer)
-   │   ├── models/             # 模型定义 (FNO)
-   │   └── utils/              # 工具函数 (IO, Metrics, Plotting)
-   ├── main.py                 # 主入口
-   └── README.md
-   ```
-
-## 🤝 协作规范 (必读)
-
-   1. **分支管理**：
-      - `main` 分支：仅存放**可运行、无报错**的稳定代码。
-      - 个人开发：请新建分支 `dev-姓名` (例如 `dev-flos`)，开发完成后发起 Pull Request 合并到 main。
-   2. **文件提交**：
-      - **严禁上传** 数据文件 (`.csv`, `.xlsx`) 和 大型模型权重 (`.pth` > 100MB)。
-      - **Notebook**：提交前请 Clear Output，避免冲突。
-   3. **依赖管理 (uv)**：
-      - 本项目严格统一环境。如果你需要引入新的 Python 包（例如 `scikit-learn`），**严禁**使用 `pip install`。
-      - **正确做法**：
+# Run the minimal FNO demo
+uv run main.py demo
 
-      ```bash
-      uv add scikit-learn
-      ```
+```
 
-      - 安装完成后，**必须**将更新后的 `pyproject.toml` 和 `uv.lock` 文件提交到 Git，以便其他组员同步。
+## Project Structure
 
-   4. **Jupyter Notebook**：
-      - 请使用 `uv run jupyter lab` 启动，确保使用正确环境。
-      - **仅限实验与可视化**
-         - Notebook (`.ipynb`) 仅用于数据探索、画图和简单验证。
-         - **严禁**在 Notebook 中定义复杂的类（Model）或核心函数。
-         - **正确做法**：将核心逻辑写在 `src/*.py` 中，然后在 Notebook 里 import 调用。
-      - **提交前必清空 (Clear Output)**
-         - `.ipynb` 文件包含大量的 JSON 格式输出（尤其是图片编码），极易导致 Git 冲突且无法解决。
-         - **操作要求**：在 Commit 代码前，必须点击 `Edit` -> `Clear All Outputs`，保存后再提交。
-         - *（未清空输出的 Notebook 将不被接受合并）*
-      - **正确引用 src 模块**
-         - 为了在 `notebooks/` 目录下的文件里顺利调用 `src/` 下的代码，请在所有 Notebook 的**第一个单元格**加入以下代码：
+```text
+Induction-Hardening-ML/
+├── config/                  # YAML configs
+├── data/                    # Raw and processed data
+├── docs/                    # Model guide and references
+├── scripts/                 # Executable helpers (data prep, plots, demos)
+├── src/                     # Core library code (data, engine, models, utils)
+├── outputs/                 # Logs, figures, checkpoints (generated)
+├── main.py                  # CLI entrypoint
+└── README.md
+```
 
-         ```python
-         import sys
-         import os
-         
-         # 将项目根目录加入路径，确保能 import src
-         project_root = os.path.abspath(os.path.join(os.getcwd(), ".."))
-         if project_root not in sys.path:
-            sys.path.append(project_root)
-         
-         # 自动重载模块（修改 src 代码后无需重启 kernel）
-         %load_ext autoreload
-         %autoreload 2
-         ```
+## Contributing
 
-## 💻 如何运行代码
-
-   为了满足作业“代码可复现”的要求，请统一使用以下命令运行：
-
-   *由于目前项目仍在开发中，以下为设想的基础运行流程，后续会根据需要进行更改补充。*
-
-### 1. 准备数据
-
-   由于数据文件较大，请从[网盘](https://pan.quark.cn/s/fb41d8e629da)下载 `dataset.zip`，解压后将文件放入 `data/raw/` 目录。
-
-   **数据预处理流程**:
-
-   请**依次**运行以下命令，将原始 COMSOL 导出数据转换为模型可用的 `.npy` 张量：
-
-   1. **一键运行所有数据准备步骤**
-      包含解析表头、生成 CSV、生成 .npy 和划分数据集。
-
-      ```bash
-      uv run main.py prepare-data
-      ```
-
-      *或者分步运行:*
-
-      ```bash
-      uv run main.py prepare-data --step analyze    # 解析表头
-      uv run main.py prepare-data --step process    # 生成 CSV
-      uv run main.py prepare-data --step preprocess # 生成 .npy
-      uv run main.py prepare-data --step split      # 划分数据集
-      ```
-
-      *输出目录: `data/processed/npy_data/`*
-
-### 2. 训练模型
-
-   ```bash
-   uv run main.py train --config config/model_config.yaml
-   ```
-
-### 3. 预测与评估
-
-   ```bash
-   uv run main.py evaluate --config config/model_config.yaml --checkpoint outputs/models_weights/best_model.pth
-   ```
-
-### 4. 可视化分析
-
-   训练完成后，可以使用脚本生成 Loss 曲线、论文插图或物理场动图。
-
-   ```bash
-   # 绘制 Loss 曲线
-   uv run main.py plot-loss --log outputs/logs/loss_history.json
-
-   # 绘制论文专用图 (Profile Plot, Parity Plot)
-   uv run main.py plot-paper --checkpoint outputs/models_weights/best_model.pth
-   ```
-
-   更多关于物理场动图生成与模型对比的可视化功能，请参阅下方的 **[🎨 可视化工具](#-可视化工具-visualization-tools)** 章节。
-
-### 5. 启动 Jupyter Notebook (用于实验)
-
-   ```bash
-   uv run jupyter lab
-   ```
-
-## 🎨 可视化工具 (Visualization Tools)
-
-   为了直观地评估模型效果，我们提供了 `scripts/visualize.py` 脚本，支持生成 2D 动态对比图和静态截图。
-
-### 使用方法
-
-   **1. 生成动图 (GIF)**
-   生成温度、奥氏体、马氏体随时间变化的动图。
-
-   ```bash
-   uv run main.py visualize --data data/processed/npy_data/sim_f100000_i1.15.npy --mode gif
-   ```
-
-   **2. 生成特定时刻截图 (Snapshot)**
-   生成指定时间点（如 5.0秒）的物理场分布图。
-
-   ```bash
-   uv run main.py visualize --data data/processed/npy_data/sim_f100000_i1.15.npy --mode snapshot --snapshot_time 5.0 --duration 10.0
-   ```
-
-   **3. 模型预测对比 (Compare)**
-   加载训练好的模型，对比预测结果与 Ground Truth。
-
-   ```bash
-   # 静态对比 (指定时刻)
-   uv run main.py visualize --data data/processed/npy_data/sim_f100000_i1.15.npy --mode compare --checkpoint outputs/models_weights/best_model.pth --snapshot_time 5.0 --duration 10.0
-
-   # 动态对比 (生成 GIF)
-   uv run main.py visualize --data data/processed/npy_data/sim_f100000_i1.15.npy --mode compare --checkpoint outputs/models_weights/best_model.pth --animate
-   ```
-
-### 参数说明
-
-- `--data`: 输入的 `.npy` 仿真数据路径 (必须)。
-- `--mode`: 可视化模式 (`gif`, `snapshot`, `compare`, `all`)。
-- `--output`: 输出目录 (默认: `outputs/figures`)。
-- `--fps`: GIF 帧率 (默认: 10)。
-- `--snapshot_time`: 截图的时间点 (秒)。
-- `--duration`: 仿真总时长 (秒)，用于计算时间索引 (默认: 10.0)。
-- `--checkpoint`: 模型权重路径 (仅 `compare` 模式需要)。
-- `--config`: 模型配置文件路径 (默认 `config/model_config.yaml`)。
-- `--animate`: 在 `compare` 模式下生成动态对比图 (若开启则不生成静态图)。
-
-### 输出结果
-
-- **对称性重建**: 脚本会自动将 2D 轴对称数据 (r, z) 沿 r 轴镜像，展示完整的截面视图。
-- **反归一化**: 温度场会自动反归一化为真实温度 (°C)。
-
-### 注意事项
-
-- **归一化**: 脚本会自动读取 `normalization_stats.json` 进行温度反归一化。
-- **相变场**: 相变分数 (0-1) 直接显示，无需反归一化。
-
-## 📊 任务分工 (Draft)
-
-   *作业要求明确成员分工及工作量占比，请大家在此处实时更新自己的工作内容。*
-
-   下面是示例：
-
-   | 成员 | 主要职责 | 当前任务 | 预计工作量占比 |
-   | :--- | :--- | :--- | :--- |
-   | **[Flos]** | 统筹、架构搭建、Pipeline整合 | 初始化项目、编写训练脚本 | TBD |
-   | **[组员A]** | 数据工程 | 数据清洗、特征提取 | TBD |
-   | **[组员B]** | 模型构建 | 搭建  | TBD |
-   | **[组员C]** | 调参优化 | 尝试  | TBD |
-   | **[组员D]** | 可视化与报告 | TBD | TBD |
+Issues and pull requests are welcome. Please keep changes reproducible, add brief documentation for new commands, and avoid committing large raw datasets or model weights.

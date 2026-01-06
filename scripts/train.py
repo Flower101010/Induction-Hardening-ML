@@ -8,7 +8,6 @@ import os
 import numpy as np
 
 # Add project root to path
-# 添加项目根目录到路径
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from src.models import ParallelUFNO
@@ -28,25 +27,15 @@ def main():
     args = parser.parse_args()
 
     # Load Config
-    # 加载配置
     with open(args.config, "r") as f:
         config = yaml.safe_load(f)
 
     # Device
-    # 设备
     device = torch.device(
         config["training"]["device"] if torch.cuda.is_available() else "cpu"
     )
-    config["training"]["device"] = (
-        device  # Update config with device object or string? Trainer expects string or object?
-    )
-    # Trainer expects string in config['training']['device'] but converts to object?
-    # Let's check Trainer: self.device = config['training']['device'] -> self.model.to(self.device)
-    # So it can be string or object.
+    config["training"]["device"] = device
 
-    # Datasets
-    # 数据集
-    # Use "npy_data" subdirectory if that's where data is
     data_dir = "data/processed/npy_data"
     train_dataset = InductionHardeningDataset(data_dir=data_dir, split="train")
     val_dataset = InductionHardeningDataset(data_dir=data_dir, split="val")
@@ -67,7 +56,6 @@ def main():
     )
 
     # Load Geometry Mask
-    # 加载几何掩码
     mask_path = os.path.join(data_dir, "geometry_mask.npy")
     if os.path.exists(mask_path):
         mask = torch.from_numpy(np.load(mask_path)).float()
@@ -79,7 +67,6 @@ def main():
         mask = None
 
     # Model
-    # 模型
     model = ParallelUFNO(
         n_modes=tuple(config["model"]["n_modes"]),
         hidden_channels=config["model"]["hidden_channels"],
@@ -91,7 +78,6 @@ def main():
     )
 
     # Load Checkpoint if specified
-    # 如果指定了检查点，则加载
     checkpoint_path = config["training"].get("load_from_checkpoint")
     if checkpoint_path:
         if os.path.exists(checkpoint_path):
@@ -105,7 +91,6 @@ def main():
             )
 
     # Loss
-    # 损失函数
     criterion = CombinedLoss(
         alpha=config["loss"]["alpha"],
         beta=config["loss"]["beta"],
@@ -113,7 +98,6 @@ def main():
     )
 
     # Optimizer
-    # 优化器
     optimizer = optim.Adam(
         model.parameters(),
         lr=config["training"]["learning_rate"],
@@ -121,7 +105,6 @@ def main():
     )
 
     # Scheduler
-    # 调度器
     scheduler = optim.lr_scheduler.StepLR(
         optimizer,
         step_size=config["training"]["scheduler"]["step_size"],
@@ -129,7 +112,6 @@ def main():
     )
 
     # Trainer
-    # 训练器
     trainer = Trainer(
         model=model,
         train_loader=train_loader,
@@ -142,7 +124,6 @@ def main():
     )
 
     # Run
-    # 运行
     trainer.run()
 
 

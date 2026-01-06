@@ -89,22 +89,22 @@ def train_step(
 
 
 def main() -> None:
-    print("🚀 Starting FNO minimal example...")
+    print("Starting FNO minimal example...")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"   Device: {device}")
 
-    print("📦 Generating synthetic data (DiffusionToy)...")
+    print("Generating synthetic data (DiffusionToy)...")
     ds = DiffusionToy(n=256, size=64)
     dl = DataLoader(ds, batch_size=8, shuffle=True)
 
-    print("🧠 Initializing FNO model...")
+    print("Initializing FNO model...")
     model = get_model().to(device)
 
     optim = torch.optim.Adam(model.parameters(), lr=1e-3)
     loss_fn = nn.MSELoss()
 
-    print("🔄 Starting training loop (3 epochs)...")
+    print("Starting training loop (3 epochs)...")
     initial_loss = None
     final_loss = None
 
@@ -116,15 +116,15 @@ def main() -> None:
         final_loss = avg_loss
         print(f"   Epoch {epoch + 1}/3: loss={avg_loss:.4f}")
 
-    print("\n✅ Training finished!")
+    print("\nTraining finished.")
     if initial_loss is not None and final_loss is not None:
         print(f"   Initial Loss: {initial_loss:.4f}")
         print(f"   Final Loss:   {final_loss:.4f}")
 
         if final_loss < initial_loss:
-            print("🎉 Success: Model is learning (loss decreased).")
+            print("Success: Model is learning (loss decreased).")
         else:
-            print("⚠️ Warning: Loss did not decrease. Check hyperparameters or data.")
+            print("Warning: Loss did not decrease. Check hyperparameters or data.")
 
 
 if __name__ == "__main__":

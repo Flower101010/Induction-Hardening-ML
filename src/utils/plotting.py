@@ -32,7 +32,6 @@ class Visualizer:
         # Expand mask to match data shape if necessary (assuming data is ..., H, W)
         # Mask is (H, W)
         if masked_data.shape[-2:] != self.mask.shape:
-            # Try to flip mask if it doesn't match (common issue in this project)
             pass
 
         # Broadcast mask
@@ -41,7 +40,7 @@ class Visualizer:
             mask_expanded = np.expand_dims(mask_expanded, 0)
 
         # Use np.where for broadcasting support
-        # masked_data[mask_expanded == 0] = np.nan  # This fails if shapes don't match exactly
+        # masked_data[mask_expanded == 0] = np.nan
         return np.where(mask_expanded == 0, np.nan, masked_data)
 
     def _reconstruct_full_2d(self, quarter_data):
@@ -96,7 +95,6 @@ class Visualizer:
         # Denormalize for colorbar limits
         _, vmin, vmax = self._denormalize(channel_data[0], name)
 
-        # If Temperature, we want to denormalize the data itself for the plot
         if name == "Temperature" and self.stats:
             channel_data, _, _ = self._denormalize(channel_data, name)
 
@@ -130,7 +128,7 @@ class Visualizer:
         def update(frame_idx):
             frame = self._reconstruct_full_2d(channel_data[frame_idx])
             im.set_array(frame)
-            # Assuming 10s total time
+            # 10s total time
             time = frame_idx * 10.0 / (T - 1)
             time_text.set_text(f"{title} - t = {time:.2f} s")
             return [im, time_text]
@@ -285,8 +283,6 @@ class Visualizer:
             ims[1].set_cmap(cmap)
             ims[1].set_clim(vmin, vmax)
             ims[2].set_cmap("Reds")
-            # Error limit is dynamic, but let's fix it to a reasonable range or let it auto-scale per frame?
-            # For animation, fixed scale is better. Let's assume error is small, e.g., 10% of max range
             err_max = (vmax - vmin) * 0.2 if name == "Temperature" else 0.2
             ims[2].set_clim(0, err_max)
 
