@@ -28,7 +28,7 @@ uv sync
 
 ## Data
 
-- Raw data: place the provided `dataset.csv` under `data/raw/`.
+- Raw data: Download `dataset.zip` from [Quark Drive](https://pan.quark.cn/s/fb41d8e629da), extract it, and place `dataset.csv` under `data/raw/`.
 - Preprocessed outputs (.npy tensors, masks, stats) are written to `data/processed/npy_data/`.
 - Geometry mask: generated as `geometry_mask.npy` during preprocessing.
 
