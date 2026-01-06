@@ -33,7 +33,6 @@ class Trainer:
         self.model.to(self.device)
 
         # Create output directories
-        # 创建输出目录
         os.makedirs("outputs/models_weights", exist_ok=True)
         os.makedirs("outputs/logs", exist_ok=True)
 
@@ -80,7 +79,6 @@ class Trainer:
         best_val_loss = float("inf")
 
         # Early Stopping parameters
-        # 早停参数
         early_stopping_cfg = self.config["training"].get("early_stopping", {})
         patience = early_stopping_cfg.get("patience", 10)
         min_delta = early_stopping_cfg.get("min_delta", 0.0)
@@ -107,7 +105,6 @@ class Trainer:
             )
 
             # Save checkpoint & Early Stopping
-            # 保存检查点和早停
             if val_loss < best_val_loss - min_delta:
                 best_val_loss = val_loss
                 counter = 0
@@ -123,7 +120,6 @@ class Trainer:
                     break
 
             # Save last model
-            # 保存最新模型
             torch.save(self.model.state_dict(), "outputs/models_weights/last_model.pth")
 
     def print_summary(self):

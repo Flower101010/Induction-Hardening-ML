@@ -4,10 +4,6 @@ Data Preprocessor Module
 This module contains logic for data preprocessing steps that might be applied
 before or during data loading. This includes normalization (MinMax, Z-score),
 handling missing values, or domain-specific transformations.
-
-此模块包含可能在数据加载之前或期间应用的数据预处理步骤的逻辑。
-这包括归一化（MinMax，Z-score），
-处理缺失值或特定领域的转换。
 """
 
 import pandas as pd
@@ -46,12 +42,12 @@ class DataPreprocessor:
 
     def calculate_global_stats(self, df: pd.DataFrame) -> Dict[str, float]:
         """
-        第一步：扫描全局最大最小值，用于归一化
+        Step 1: Scan global min/max for normalization
         """
-        print("正在扫描全局统计数据 (用于归一化)...")
+        print("Scanning global stats (for normalization)...")
 
-        # 只需要扫描温度，因为相含量本身就是 0-1
-        # 甚至参数 (f, I) 也建议扫描一下用于输入归一化
+        # Scan temperature (phases are 0-1)
+        # Scan parameters (f, I) for input normalization
 
         stats = {
             "temp_min": float(df["Temperature"].min()),
@@ -62,7 +58,7 @@ class DataPreprocessor:
             "curr_max": float(df["current"].max()),
         }
 
-        print(f"统计完成: {json.dumps(stats, indent=2)}")
+        print(f"Stats scan complete: {json.dumps(stats, indent=2)}")
         return stats
 
     def process(self):
@@ -72,136 +68,129 @@ class DataPreprocessor:
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
 
-        # 1. 加载数据
-        print(f"1. 加载数据: {self.input_file}")
+        # 1. Load data
+        print(f"1. Loading data: {self.input_file}")
 
-        # === 修正读取逻辑 ===
+        # === Read Logic ===
         if self.input_file.endswith(".csv"):
-            # 如果是 CSV 文件，用 read_csv
             df = pd.read_csv(self.input_file)
         else:
-            # 如果是 Parquet 文件，用 read_parquet
             df = pd.read_parquet(self.input_file)
         # ===================
 
-        # 2. 计算并保存归一化参数
+        # 2. Calculate and save stats
         stats = self.calculate_global_stats(df)
         with open(os.path.join(self.output_dir, self.norm_file), "w") as f:
             json.dump(stats, f)
 
-        # 3. 准备处理
-        # 按工艺参数分组 (freq, current)
+        # 3. Prepare processing
+        # Group by process parameters (freq, current)
         groups = df.groupby(["freq", "current"])
-        print(f"检测到 {len(groups)} 组实验。开始转换...")
+        print(f"Detected {len(groups)} experiment groups. Starting conversion...")
 
-        # 期望的尺寸
+        # Target dimensions
         W, H = self.grid_size  # r=64, z=128
 
-        # 标志位：是否已经保存了几何掩码
+        # Flag: check if geometry mask is saved
         mask_saved = False
 
         for i, ((freq_val, curr_val), group_df) in enumerate(groups):
             print(
-                f"\r处理进度 [{i + 1}/{len(groups)}] (f={int(freq_val)}, I={curr_val})...",
+                f"\rProcessing [{i + 1}/{len(groups)}] (f={int(freq_val)}, I={curr_val})...",
                 end="",
             )
 
-            # --- A. 严格排序 (至关重要) ---
-            # 必须按照: 时间(T) -> 高度(z) -> 宽度(r) 排序
-            # 这样 reshape 出来的图片才是正确的方向
+            # --- A. Strict Sorting (Crucial) ---
+            # Must sort by: Time -> Z -> R
+            # This ensures correct reshape
             sorted_df = group_df.sort_values(by=["time", "z", "r"])
 
-            # 获取时间步数
+            # Get time steps
             n_time = sorted_df["time"].nunique()
 
-            # --- B. 提取原始数据 ---
-            # 取出我们要的列
-            # 注意：这里可能会包含 NaN (因为倒角/规则格栅的缘故)
+            # --- B. Extract Raw Data ---
+            # Extract desired columns
+            # Values might contain NaN (due to chamfer/regular grid)
             temp_raw = sorted_df["Temperature"].values
             aust_raw = sorted_df["Austenite"].values
             mart_raw = sorted_df["Martensite"].values
 
-            # --- C. 处理倒角 (Chamfer/Void) ---
-            # COMSOL 导出的规则网格，如果有点在几何体外，通常是 NaN
-            # 我们利用 Temperature 里的 NaN 来判断哪里是“空气”
+            # --- C. Handle Chamfer/Void ---
+            # COMSOL exports regular grids, points outside geometry are NaN
+            # We use NaN in Temperature to detect "Air"
 
-            # 创建掩码：非 NaN 的地方是 1 (实体)，NaN 的地方是 0 (空气)
-            # 注意：这里假设温度场里 NaN 代表空气。
+            # Create mask: 1 for Solid, 0 for Air (NaN)
             is_solid = ~np.isnan(temp_raw)
 
-            # 如果这是第一次循环，我们保存这个掩码 (因为所有实验的几何体都是一样的)
+            # Save mask if first run (geometry is constant)
             if not mask_saved:
-                # 这里的 mask 是展平的，我们需要 reshape 成 2D 图片
-                # 取第一个时间步的 mask 即可 (几何体形状不随时间改变)
+                # Mask is flattened, reshape to 2D
+                # Take first time step mask
                 # mask shape: (H, W)
                 single_step_mask = is_solid[: H * W].astype(np.float32).reshape(H, W)
 
-                # 保存掩码
+                # Save mask
                 np.save(os.path.join(self.output_dir, self.mask_file), single_step_mask)
-                print("\n[Info] 几何掩码已检测并保存 (含倒角处理)。")
+                print("\n[Info] Geometry mask detected and saved.")
                 mask_saved = True
 
-            # --- D. 填充 NaN ---
-            # 将 NaN 替换为 0 (或者其他值，但 0 最适合 CNN)
-            # 这一步必须做，否则网络训练 Loss 会变成 NaN
+            # --- D. Fill NaNs ---
+            # Replace NaN with 0.0 (clean for CNN)
+            # Essential to prevent NaN loss
             temp_raw = np.nan_to_num(temp_raw, nan=0.0)  # type: ignore
             aust_raw = np.nan_to_num(aust_raw, nan=0.0)  # pyright: ignore[reportArgumentType, reportCallIssue]
             mart_raw = np.nan_to_num(mart_raw, nan=0.0)  # pyright: ignore[reportArgumentType, reportCallIssue]
 
-            # --- E. 计算剩余相 (Initial Phase) ---
+            # --- E. Calculate Remaining Phase (Initial Phase) ---
             # Initial = 1 - (Aust + Mart)
-            # 仅在实体内部计算，空气部分保持 0
+            # Only inside solid, air remains 0
             init_raw = np.zeros_like(aust_raw)
 
-            # 只在 is_solid 的地方计算
+            # Compute only where is_solid
             init_raw[is_solid] = 1.0 - (aust_raw[is_solid] + mart_raw[is_solid])
 
-            # 截断到 [0, 1] 防止浮点误差
+            # Clip to [0, 1]
             init_raw = np.clip(init_raw, 0.0, 1.0)
-            # 再次确保空气部分是 0 (clip可能会把负数变0，这没问题，但空气部分应该是0)
+            # Ensure air is 0
             init_raw[~is_solid] = 0.0
 
-            # --- F. 归一化 (Normalization) ---
-            # 仅对温度进行 Min-Max 归一化
+            # --- F. Normalization ---
+            # Min-Max Normalize Temperature
             # Temp_norm = (T - T_min) / (T_max - T_min)
-            # 同样，只归一化实体部分，空气部分保持 0
+            # Only normalize solid, air remains 0
             t_min, t_max = stats["temp_min"], stats["temp_max"]
 
             temp_norm = np.zeros_like(temp_raw)
             if t_max > t_min:
                 temp_norm[is_solid] = (temp_raw[is_solid] - t_min) / (t_max - t_min)
 
-            # --- G. 组合与 Reshape ---
-            # 目前我们要组合 4 个通道: [Temp_norm, Aust, Mart, Initial]
-            # 此时数据形状是 (Total_Points, )
+            # --- G. Combine and Reshape ---
+            # Combine 4 channels: [Temp_norm, Aust, Mart, Initial]
+            # Current shape: (Total_Points, )
 
-            # 堆叠
+            # Stack
             # Shape: (Total_Points, 4)
             combined_data = np.stack([temp_norm, aust_raw, mart_raw, init_raw], axis=1)
 
-            # 核心 Reshape
-            # 目标: (Time, Height/z, Width/r, Channels)
+            # Core Reshape
+            # Target: (Time, Height/z, Width/r, Channels)
             try:
                 tensor_4d = combined_data.reshape(n_time, H, W, 4)
             except ValueError as e:
-                print(f"\n❌ Reshape 失败 (f={freq_val}, I={curr_val}): {e}")
+                print(f"\nReshape failed (f={freq_val}, I={curr_val}): {e}")
                 print(
-                    f"数据长度 {len(combined_data)} 无法被 {n_time}x{H}x{W}={n_time * H * W} 整除"
+                    f"Data length {len(combined_data)} not divisible by {n_time}x{H}x{W}={n_time * H * W}"
                 )
                 continue
 
-            # 转换为 PyTorch 格式: (Batch/Time, Channels, Height, Width)
-            # (T, H, W, C) -> (T, C, H, W)
             tensor_final = tensor_4d.transpose(0, 3, 1, 2)
 
-            # --- H. 保存 ---
-            # float32 足够机器学习使用，节省一半空间
             tensor_final = tensor_final.astype(np.float32)
 
             filename = f"sim_f{int(freq_val)}_i{curr_val:.2f}.npy"
             np.save(os.path.join(self.output_dir, filename), tensor_final)
 
-            # 清理内存
+            # Clean memory
             del (
                 sorted_df,
                 temp_raw,
@@ -215,18 +204,21 @@ class DataPreprocessor:
             )
             gc.collect()
 
-        print("\n\n全部完成！")
-        print(f"1. 训练数据 (.npy) 保存在: {self.output_dir}/")
+        print("\n\nAll tasks completed!")
+        print(f"1. Training data (.npy) saved at: {self.output_dir}/")
         print(
-            f"2. 几何掩码 (Mask) 保存在: {os.path.join(self.output_dir, self.mask_file)}"
+            f"2. Geometry Mask saved at: {os.path.join(self.output_dir, self.mask_file)}"
         )
-        print("   (训练时请加载此 Mask，计算 Loss 时只计算 mask=1 的区域)")
-        print(f"3. 归一化参数保存在: {os.path.join(self.output_dir, self.norm_file)}")
-        print("   (预测推理时，用这些参数把 0-1 的温度还原回摄氏度)")
+        print(
+            "   (Load this mask during training to compute loss only on mask=1 regions)"
+        )
+        print(
+            f"3. Normalization stats saved at: {os.path.join(self.output_dir, self.norm_file)}"
+        )
+        print("   (Use these stats to denormalize temperature during inference)")
 
 
 if __name__ == "__main__":
-    # 默认配置
     config = {
         "input_file": "data/processed/processed_dataset.csv",
         "output_dir": "data/processed/npy_data",
